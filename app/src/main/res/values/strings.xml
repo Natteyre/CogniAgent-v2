@@ -1,5 +1,0 @@
-<resources>
-    <string name="app_name">CogniAgent</string>
-    <string name="accessibility_service_description">Automates UI clicks, routine execution and app launches for CogniAgent.</string>
-    <string name="widget_description">Szybki dostęp do asystenta głosowego, latarki i rutyn CogniAgent</string>
-</resources>
