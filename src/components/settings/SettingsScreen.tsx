@@ -8,10 +8,6 @@ import {
   Eye,
   EyeOff,
   RefreshCw,
-  Flashlight,
-  Bluetooth,
-  Battery,
-  BatteryCharging,
   Layers,
   CheckCircle,
   AlertCircle,
@@ -21,15 +17,38 @@ import {
   ShieldCheck,
   Zap,
   Moon,
-  Sun,
-  BellOff,
   ChevronRight,
   ExternalLink,
-  FolderOpen
+  FolderOpen,
+  Sparkles,
+  Smartphone,
+  Mic,
+  Settings2,
+  ShieldAlert,
+  Fingerprint,
+  FileText,
+  MessageSquare,
+  DollarSign,
+  Lock
 } from 'lucide-react';
-import { HardwareState, KirinTelemetry, LlmSettings, DownloadState, OfflineModelInfo } from '../../types';
+import {
+  HardwareState,
+  KirinTelemetry,
+  LlmSettings,
+  DownloadState,
+  OfflineModelInfo,
+  DeviceProfile,
+  AgentServicesConfig,
+  HardwareAccelerationBackend,
+  AgentSecurityPolicy,
+  SecurityAuditItem,
+  SecurityMode
+} from '../../types';
 import { hardwareManager } from '../../services/hardwareManager';
 import { modelManager } from '../../services/modelManager';
+import { soundAndHaptics } from '../../services/soundAndHaptics';
+import { deviceProfileManager, DEVICE_PRESETS } from '../../services/deviceProfileManager';
+import { securityManager } from '../../services/securityManager';
 import { ModelManagerModal } from '../models/ModelManagerModal';
 
 interface SettingsScreenProps {
@@ -97,13 +116,54 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
   const [offlineModels, setOfflineModels] = useState<OfflineModelInfo[]>(() => modelManager.getModels());
   const [activeOfflineModelId, setActiveOfflineModelId] = useState<string>(() => modelManager.getActiveModelId());
 
+  // Device Profile & Agent Services State
+  const [deviceProfile, setDeviceProfile] = useState<DeviceProfile>(() => deviceProfileManager.getActiveProfile());
+  const [agentServices, setAgentServices] = useState<AgentServicesConfig>(() => deviceProfileManager.getServicesConfig());
+  const [isEditingCustomDevice, setIsEditingCustomDevice] = useState(false);
+  const [customForm, setCustomForm] = useState<DeviceProfile>(() => ({ ...deviceProfile }));
+
+  // Security Policy & Audit Log State
+  const [securityPolicy, setSecurityPolicy] = useState<AgentSecurityPolicy>(() => securityManager.getPolicy());
+  const [auditLog, setAuditLog] = useState<SecurityAuditItem[]>(() => securityManager.getAuditLog());
+  const [showAuditModal, setShowAuditModal] = useState(false);
+
   useEffect(() => {
-    const unsub = modelManager.subscribeModelList((list) => {
+    const unsubModels = modelManager.subscribeModelList((list) => {
       setOfflineModels(list);
       setActiveOfflineModelId(modelManager.getActiveModelId());
     });
-    return unsub;
+
+    const unsubDevice = deviceProfileManager.subscribe((prof, srv) => {
+      setDeviceProfile(prof);
+      setAgentServices(srv);
+      setCustomForm({ ...prof });
+    });
+
+    const unsubSecurity = securityManager.subscribePolicy((pol, log) => {
+      setSecurityPolicy(pol);
+      setAuditLog(log);
+    });
+
+    return () => {
+      unsubModels();
+      unsubDevice();
+      unsubSecurity();
+    };
   }, []);
+
+  const handleSelectPreset = (key: string) => {
+    if (key === 'custom') {
+      setIsEditingCustomDevice(true);
+    } else {
+      setIsEditingCustomDevice(false);
+      deviceProfileManager.setActiveProfile(key);
+    }
+  };
+
+  const handleSaveCustomProfile = () => {
+    deviceProfileManager.setActiveProfile(customForm);
+    setIsEditingCustomDevice(false);
+  };
 
   const handleSaveLlm = (field: Partial<LlmSettings>) => {
     const updated = {
@@ -119,7 +179,7 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
     onUpdateSettings(updated);
   };
 
-  const handleRunHuaweiWizard = () => {
+  const handleRunOptimizationWizard = () => {
     hardwareManager.runFullHuaweiOptimization();
     setWizardSuccessMsg(true);
     setTimeout(() => setWizardSuccessMsg(false), 3500);
@@ -141,7 +201,7 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
             Konfiguracja i Diagnostyka
           </h1>
           <p className="text-xs text-[#94a3b8]">
-            LLM Cloud, EMUI 10 Battery Wizard, Kirin 980 Hardware
+            Profil urządzenia, LLM Cloud, modele offline i usługi asystenta
           </p>
         </div>
 
@@ -158,100 +218,180 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
 
       {/* Settings Cards List */}
       <div className="flex-1 p-4 space-y-4">
-        {/* Huawei / EMUI 10 Optimization & PowerGenie Wizard */}
-        <div className="bg-gradient-to-br from-[#121824] via-[#1a2233] to-[#121824] border-2 border-[#00e5ff]/40 rounded-2xl p-4 shadow-[0_0_20px_rgba(0,229,255,0.15)] space-y-3">
-          <div className="flex items-center justify-between">
+        {/* Card 0: Universal Device Profile & Hardware Acceleration */}
+        <div className="bg-gradient-to-br from-[#121824] via-[#1a2233] to-[#121824] border-2 border-[#00e5ff]/40 rounded-2xl p-4 shadow-[0_0_20px_rgba(0,229,255,0.15)] space-y-3.5">
+          <div className="flex items-center justify-between flex-wrap gap-2">
             <div className="flex items-center gap-3">
-              <div className="w-9 h-9 rounded-full bg-[#00e5ff]/20 border border-[#00e5ff]/40 flex items-center justify-center">
-                <ShieldCheck className="w-5 h-5 text-[#00e5ff]" />
+              <div className="w-10 h-10 rounded-xl bg-[#00e5ff]/20 border border-[#00e5ff]/40 flex items-center justify-center shrink-0">
+                <Smartphone className="w-5 h-5 text-[#00e5ff]" />
               </div>
               <div>
-                <h2 className="text-sm font-bold text-white flex items-center gap-2">
-                  <span>Przewodnik Huawei / EMUI 10 (PowerGenie Guard)</span>
-                  {isFullyOptimized && (
-                    <span className="bg-[#10b981]/20 text-[#10b981] border border-[#10b981]/30 text-[10px] px-1.5 py-0.2 rounded font-bold">
-                      Aktywny
-                    </span>
-                  )}
+                <h2 className="text-sm sm:text-base font-bold text-white flex items-center gap-2">
+                  <span>Profil Urządzenia & Akceleracja AI</span>
+                  <span className="bg-[#00e5ff]/20 text-[#00e5ff] border border-[#00e5ff]/30 text-[10px] font-mono px-2 py-0.5 rounded-full">
+                    {deviceProfile.manufacturer.toUpperCase()}
+                  </span>
                 </h2>
                 <p className="text-[11px] text-gray-300">
-                  Ochrona procesów Kirin 980 przed ubijaniem w tle po wygaszeniu ekranu
+                  Dostosuj konfigurację podzespołów, silnik NPU i profil zarządzania energią do Twojego smartfona
                 </p>
               </div>
             </div>
+
+            <button
+              type="button"
+              onClick={() => setIsEditingCustomDevice(!isEditingCustomDevice)}
+              className="px-2.5 py-1.5 rounded-xl bg-[#1e2638] hover:bg-[#2d3748] text-[#00e5ff] text-xs font-semibold flex items-center gap-1.5 border border-white/5 transition-colors"
+            >
+              <Settings2 className="w-3.5 h-3.5" />
+              <span>{isEditingCustomDevice ? 'Ukryj edytor' : 'Edytuj parametry'}</span>
+            </button>
           </div>
 
+          {/* Preset Selector Dropdown */}
+          <div>
+            <label className="block text-xs font-semibold text-gray-300 mb-1.5">
+              Wybierz model telefonu lub profil bazowy:
+            </label>
+            <select
+              value={isEditingCustomDevice ? 'custom' : deviceProfile.id}
+              onChange={(e) => handleSelectPreset(e.target.value)}
+              className="w-full bg-[#0a0e14] border border-[#2d3748] focus:border-[#00e5ff] rounded-xl px-3 py-2 text-xs text-white outline-none font-medium"
+            >
+              <option value="universal">🌐 Uniwersalny profil Android (Dowolny telefon: Sony, Motorola, Realme, Asus...)</option>
+              <option value="huawei_p30_pro">📱 Huawei P30 Pro (HiSilicon Kirin 980 / HiAI Dual-NPU / EMUI 10)</option>
+              <option value="samsung_s23_s24">📱 Samsung Galaxy S23 / S24 (Snapdragon 8 Gen 2/3 / Exynos / QNN NPU)</option>
+              <option value="pixel_7_8_9">📱 Google Pixel 7 / 8 / 9 (Google Tensor / EdgeTPU / Czysty Android)</option>
+              <option value="xiaomi_hyperos">📱 Xiaomi / Redmi / POCO (Snapdragon / Dimensity APU / HyperOS)</option>
+              <option value="custom">⚙️ Własny model telefonu (Ręczna konfiguracja)</option>
+            </select>
+          </div>
+
+          {/* Custom device specification form if open */}
+          {isEditingCustomDevice && (
+            <div className="bg-[#0a0e14] border border-[#00e5ff]/30 p-3.5 rounded-xl space-y-3 animate-fadeIn">
+              <div className="text-xs font-bold text-[#00e5ff]">Własne parametry podzespołów smartfona:</div>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 text-xs">
+                <div>
+                  <label className="text-gray-400 block mb-1">Nazwa modelu telefonu:</label>
+                  <input
+                    type="text"
+                    value={customForm.modelName}
+                    onChange={(e) => setCustomForm({ ...customForm, modelName: e.target.value })}
+                    className="w-full bg-[#121824] border border-[#2d3748] rounded-lg px-2.5 py-1.5 text-white outline-none focus:border-[#00e5ff]"
+                  />
+                </div>
+                <div>
+                  <label className="text-gray-400 block mb-1">Chipset / Procesor:</label>
+                  <input
+                    type="text"
+                    value={customForm.chipset}
+                    onChange={(e) => setCustomForm({ ...customForm, chipset: e.target.value })}
+                    className="w-full bg-[#121824] border border-[#2d3748] rounded-lg px-2.5 py-1.5 text-white outline-none focus:border-[#00e5ff]"
+                  />
+                </div>
+                <div>
+                  <label className="text-gray-400 block mb-1">Pamięć RAM (GB):</label>
+                  <input
+                    type="number"
+                    min="3"
+                    max="24"
+                    value={customForm.ramGB}
+                    onChange={(e) => setCustomForm({ ...customForm, ramGB: parseInt(e.target.value, 10) || 6 })}
+                    className="w-full bg-[#121824] border border-[#2d3748] rounded-lg px-2.5 py-1.5 text-white outline-none focus:border-[#00e5ff]"
+                  />
+                </div>
+                <div>
+                  <label className="text-gray-400 block mb-1">Silnik akceleracji NPU/AI:</label>
+                  <select
+                    value={customForm.npuAcceleration}
+                    onChange={(e) =>
+                      setCustomForm({ ...customForm, npuAcceleration: e.target.value as HardwareAccelerationBackend })
+                    }
+                    className="w-full bg-[#121824] border border-[#2d3748] rounded-lg px-2.5 py-1.5 text-white outline-none focus:border-[#00e5ff]"
+                  >
+                    <option value="AUTO_NNAPI">AUTO_NNAPI (Standardowe Android Neural Networks)</option>
+                    <option value="HIAI_NPU">HIAI_NPU (Huawei HiSilicon Kirin NPU)</option>
+                    <option value="QNN_HEXAGON">QNN_HEXAGON (Qualcomm Snapdragon NPU / Hexagon)</option>
+                    <option value="EDGETPU">EDGETPU (Google Tensor TPU)</option>
+                    <option value="GPU_VULKAN">GPU_VULKAN (Akceleracja graficzna Vulkan / OpenCL)</option>
+                    <option value="CPU_NEON">CPU_NEON (Optymalizacja procesora ARM Neon SIMD)</option>
+                  </select>
+                </div>
+              </div>
+
+              <div className="flex justify-end gap-2 pt-1">
+                <button
+                  type="button"
+                  onClick={() => setIsEditingCustomDevice(false)}
+                  className="px-3 py-1.5 text-xs text-gray-400 hover:text-white"
+                >
+                  Anuluj
+                </button>
+                <button
+                  type="button"
+                  onClick={handleSaveCustomProfile}
+                  className="px-4 py-1.5 bg-[#00e5ff] text-black font-bold text-xs rounded-xl hover:bg-[#00b4d8] transition-colors"
+                >
+                  Zastosuj ten profil
+                </button>
+              </div>
+            </div>
+          )}
+
+          {/* Active Profile Specs Grid */}
+          <div className="bg-[#0a0e14]/80 p-3 rounded-xl border border-white/5 grid grid-cols-2 sm:grid-cols-3 gap-2.5 text-xs">
+            <div>
+              <div className="text-[10px] text-gray-400 uppercase font-mono">Aktywny Model</div>
+              <div className="font-bold text-white truncate">{deviceProfile.modelName}</div>
+            </div>
+            <div>
+              <div className="text-[10px] text-gray-400 uppercase font-mono">Procesor (SoC)</div>
+              <div className="font-bold text-[#00e5ff] truncate">{deviceProfile.chipset}</div>
+            </div>
+            <div>
+              <div className="text-[10px] text-gray-400 uppercase font-mono">Akcelerator AI</div>
+              <div className="font-bold text-[#8b5cf6] truncate">{deviceProfile.npuAcceleration}</div>
+            </div>
+            <div>
+              <div className="text-[10px] text-gray-400 uppercase font-mono">Pamięć RAM</div>
+              <div className="font-bold text-white">{deviceProfile.ramGB} GB RAM</div>
+            </div>
+            <div>
+              <div className="text-[10px] text-gray-400 uppercase font-mono">Wersja Systemu</div>
+              <div className="font-bold text-gray-200 truncate">{deviceProfile.androidVersion}</div>
+            </div>
+            <div>
+              <div className="text-[10px] text-gray-400 uppercase font-mono">Zarządzanie Energią</div>
+              <div className="font-bold text-[#10b981] truncate">{deviceProfile.batteryOptimizationSystemName}</div>
+            </div>
+          </div>
+
+          {/* System Battery Optimization Wizard for this specific device */}
           <div className="bg-[#0a0e14]/80 p-3 rounded-xl border border-white/5 space-y-2 text-xs">
-            <div className="flex items-center justify-between text-gray-300">
-              <span className="flex items-center gap-2">
-                <CheckCircle className={`w-4 h-4 ${huawei.autostartEnabled ? 'text-[#10b981]' : 'text-gray-500'}`} />
-                <span>Autostart i ochrona w tle (Huawei Protected Apps)</span>
-              </span>
-              <button
-                type="button"
-                onClick={() => hardwareManager.updateHuaweiOptimization({ autostartEnabled: !huawei.autostartEnabled })}
-                className="text-[11px] font-semibold text-[#00e5ff] hover:underline"
-              >
-                {huawei.autostartEnabled ? 'Włączone' : 'Włącz'}
-              </button>
+            <div className="text-gray-300 font-semibold flex items-center justify-between">
+              <span>Zasady ochrony procesów w tle dla {deviceProfile.modelName}:</span>
+              <span className="text-[#10b981] font-mono text-[10px]">Włączona ochrona</span>
             </div>
-
-            <div className="flex items-center justify-between text-gray-300">
-              <span className="flex items-center gap-2">
-                <CheckCircle className={`w-4 h-4 ${huawei.batteryOptimizationIgnored ? 'text-[#10b981]' : 'text-gray-500'}`} />
-                <span>Wyłączenie optymalizacji baterii (IGNORE_BATTERY)</span>
-              </span>
-              <button
-                type="button"
-                onClick={() => hardwareManager.updateHuaweiOptimization({ batteryOptimizationIgnored: !huawei.batteryOptimizationIgnored })}
-                className="text-[11px] font-semibold text-[#00e5ff] hover:underline"
-              >
-                {huawei.batteryOptimizationIgnored ? 'Wyłączona' : 'Wyłącz'}
-              </button>
-            </div>
-
-            <div className="flex items-center justify-between text-gray-300">
-              <span className="flex items-center gap-2">
-                <CheckCircle className={`w-4 h-4 ${huawei.powerGenieGuarded ? 'text-[#10b981]' : 'text-gray-500'}`} />
-                <span>Blokada zabijania usług przez PowerGenie</span>
-              </span>
-              <button
-                type="button"
-                onClick={() => hardwareManager.updateHuaweiOptimization({ powerGenieGuarded: !huawei.powerGenieGuarded })}
-                className="text-[11px] font-semibold text-[#00e5ff] hover:underline"
-              >
-                {huawei.powerGenieGuarded ? 'Aktywna' : 'Włącz'}
-              </button>
-            </div>
-
-            <div className="flex items-center justify-between text-gray-300">
-              <span className="flex items-center gap-2">
-                <CheckCircle className={`w-4 h-4 ${huawei.lockScreenKeepAlive ? 'text-[#10b981]' : 'text-gray-500'}`} />
-                <span>Nasłuch słowa kluczowego przy wygaszonym ekranie</span>
-              </span>
-              <button
-                type="button"
-                onClick={() => hardwareManager.updateHuaweiOptimization({ lockScreenKeepAlive: !huawei.lockScreenKeepAlive })}
-                className="text-[11px] font-semibold text-[#00e5ff] hover:underline"
-              >
-                {huawei.lockScreenKeepAlive ? 'Aktywny' : 'Włącz'}
-              </button>
-            </div>
+            <p className="text-gray-400 text-[11px] leading-relaxed">
+              {deviceProfile.notes}. System zabezpiecza proces asystenta przed zatrzymywaniem po wyłączeniu ekranu i
+              zapewnia natychmiastową reakcję na słowo wybudzające <em>„Hej Cogni”</em>.
+            </p>
           </div>
 
           <button
             type="button"
-            onClick={handleRunHuaweiWizard}
+            onClick={handleRunOptimizationWizard}
             className="w-full py-2.5 px-4 rounded-xl bg-gradient-to-r from-[#00e5ff] to-[#8b5cf6] text-black font-extrabold text-xs shadow-md hover:opacity-95 transition-all flex items-center justify-center gap-2"
           >
             <Zap className="w-4 h-4 fill-black" />
-            <span>⚡ Zastosuj pełną konfigurację Huawei P30 Pro / EMUI 10</span>
+            <span>⚡ Zastosuj konfigurację optymalizacji dla: {deviceProfile.modelName}</span>
           </button>
 
           {wizardSuccessMsg && (
             <div className="bg-[#10b981]/20 border border-[#10b981]/40 text-[#10b981] p-2.5 rounded-xl text-xs font-semibold flex items-center gap-2 animate-fadeIn">
               <CheckCircle className="w-4 h-4 shrink-0" />
-              <span>Pomyślnie zoptymalizowano ustawienia zasilania i autostartu dla Huawei EMUI 10!</span>
+              <span>Pomyślnie zastosowano konfigurację tła dla urządzenia: {deviceProfile.modelName}!</span>
             </div>
           )}
         </div>
@@ -610,17 +750,92 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
           </button>
         </div>
 
-        {/* Card 5: Hardware Diagnostics & System States */}
+        {/* Card 4b: Audio Earcons & Haptics */}
         <div
-          data-testid="hardware_state_card"
+          data-testid="sound_haptics_card"
           className="bg-[#121824] border border-[#2d3748] rounded-2xl p-4 shadow-sm space-y-3"
         >
-          <h2 className="text-sm font-bold text-white mb-2">
-            Stan Sprzętu i Usług (Kirin 980)
-          </h2>
+          <div className="flex items-center gap-3">
+            <div className="w-8 h-8 rounded-full bg-[#00e5ff]/20 border border-[#00e5ff]/30 flex items-center justify-center shrink-0">
+              <Sparkles className="w-4 h-4 text-[#00e5ff]" />
+            </div>
+            <div>
+              <h2 className="text-sm font-bold text-white">Sygnały Dźwiękowe & Wibracje Haptyczne</h2>
+              <p className="text-[11px] text-gray-400">Synteza Web Audio API Earcons oraz haptyka smartfona</p>
+            </div>
+          </div>
 
-          {/* Floating Overlay Switch */}
           <div className="flex items-center justify-between py-1.5 border-b border-white/5">
+            <div>
+              <div className="text-xs font-semibold text-white">Sygnały Dźwiękowe (Audio Earcons)</div>
+              <div className="text-[11px] text-gray-400">Dźwięk "blip" przy słowie kluczowym, sukcesie i alarmie</div>
+            </div>
+            <label className="relative inline-flex items-center cursor-pointer">
+              <input
+                type="checkbox"
+                checked={llmSettings.soundEffectsEnabled !== false}
+                onChange={(e) => handleSaveLlm({ soundEffectsEnabled: e.target.checked })}
+                className="sr-only peer"
+              />
+              <div className="w-11 h-6 bg-[#1e2638] peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-[#00e5ff]"></div>
+            </label>
+          </div>
+
+          <div className="flex items-center justify-between py-1.5 border-b border-white/5">
+            <div>
+              <div className="text-xs font-semibold text-white">Wibracje Haptyczne (Haptic Feedback)</div>
+              <div className="text-[11px] text-gray-400">Potwierdzenie wibracją akcji sprzętowych i powiadomień</div>
+            </div>
+            <label className="relative inline-flex items-center cursor-pointer">
+              <input
+                type="checkbox"
+                checked={llmSettings.hapticFeedbackEnabled !== false}
+                onChange={(e) => handleSaveLlm({ hapticFeedbackEnabled: e.target.checked })}
+                className="sr-only peer"
+              />
+              <div className="w-11 h-6 bg-[#1e2638] peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-[#8b5cf6]"></div>
+            </label>
+          </div>
+
+          <div className="flex items-center gap-2 pt-1 flex-wrap sm:flex-nowrap">
+            <button
+              type="button"
+              onClick={() => soundAndHaptics.playWakeWordChime()}
+              className="flex-1 py-2 px-3 rounded-xl bg-[#00e5ff]/15 hover:bg-[#00e5ff]/25 text-[#00e5ff] text-xs font-bold transition-colors"
+            >
+              Testuj dźwięk "Hej Cogni"
+            </button>
+            <button
+              type="button"
+              onClick={() => soundAndHaptics.triggerHaptic([40, 50, 40])}
+              className="flex-1 py-2 px-3 rounded-xl bg-[#8b5cf6]/15 hover:bg-[#8b5cf6]/25 text-[#8b5cf6] text-xs font-bold transition-colors"
+            >
+              Testuj wibrację
+            </button>
+          </div>
+        </div>
+
+        {/* Card 5: Agent System Services & Permissions (Cleaned & Enhanced) */}
+        <div
+          data-testid="hardware_state_card"
+          className="bg-[#121824] border border-[#2d3748] rounded-2xl p-4 shadow-sm space-y-3.5"
+        >
+          <div className="flex items-center gap-3">
+            <div className="w-9 h-9 rounded-xl bg-[#00e5ff]/20 border border-[#00e5ff]/40 flex items-center justify-center shrink-0">
+              <Layers className="w-5 h-5 text-[#00e5ff]" />
+            </div>
+            <div>
+              <h2 className="text-sm sm:text-base font-bold text-white">
+                Usługi Systemowe & Uprawnienia Agenta
+              </h2>
+              <p className="text-[11px] text-gray-400">
+                Pływający dymek, usługa dostępności, zrzuty ekranu, nasłuch w tle i autostart
+              </p>
+            </div>
+          </div>
+
+          {/* 1. Floating Overlay Switch (Kept as requested) */}
+          <div className="flex items-center justify-between py-2 border-b border-white/5">
             <div className="flex items-center gap-2.5">
               <Layers className={`w-4 h-4 ${isFloatingActive ? 'text-[#00e5ff]' : 'text-gray-400'}`} />
               <div>
@@ -628,7 +843,7 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
                   Pływający Dymek Asystenta (True Floating Chat Overlay)
                 </div>
                 <div className="text-[11px] text-gray-400">
-                  {isFloatingActive ? 'Dymek aktywny nad aplikacjami' : 'Wyłączony'}
+                  {isFloatingActive ? 'Dymek aktywny nad aplikacjami (SYSTEM_ALERT_WINDOW)' : 'Wyłączony'}
                 </div>
               </div>
             </div>
@@ -643,118 +858,247 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
             </label>
           </div>
 
-          {/* Do Not Disturb (DND) Switch */}
-          <div className="flex items-center justify-between py-1.5 border-b border-white/5">
+          {/* 2. Accessibility Service (Crucial for In-App Controls) */}
+          <div className="flex items-center justify-between py-2 border-b border-white/5">
             <div className="flex items-center gap-2.5">
-              <BellOff className={`w-4 h-4 ${hardwareState.isDndActive ? 'text-red-400' : 'text-gray-400'}`} />
-              <div>
-                <div className="text-xs font-semibold text-white">Tryb Nie Przeszkadzać (DND)</div>
-                <div className="text-[11px] text-gray-400">
-                  {hardwareState.isDndActive ? 'Wyciszenie powiadomień aktywne' : 'Wyłączony'}
-                </div>
-              </div>
-            </div>
-            <label className="relative inline-flex items-center cursor-pointer">
-              <input
-                type="checkbox"
-                checked={hardwareState.isDndActive}
-                onChange={() => hardwareManager.toggleDndMode()}
-                className="sr-only peer"
-              />
-              <div className="w-11 h-6 bg-[#1e2638] peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-red-500"></div>
-            </label>
-          </div>
-
-          {/* Screen Brightness Slider */}
-          <div className="py-1.5 border-b border-white/5 space-y-1">
-            <div className="flex items-center justify-between text-xs">
-              <span className="flex items-center gap-2 text-white">
-                <Sun className="w-4 h-4 text-amber-400" />
-                <span>Jasność ekranu</span>
-              </span>
-              <span className="font-mono text-[#00e5ff] font-bold">{hardwareState.brightnessPercent}%</span>
-            </div>
-            <input
-              type="range"
-              min="10"
-              max="100"
-              value={hardwareState.brightnessPercent}
-              onChange={(e) => hardwareManager.setBrightness(parseInt(e.target.value, 10))}
-              className="w-full accent-[#00e5ff]"
-            />
-          </div>
-
-          {/* Battery Indicator */}
-          <div className="flex items-center justify-between py-1.5 border-b border-white/5">
-            <div className="flex items-center gap-2.5">
-              {hardwareState.isCharging ? (
-                <BatteryCharging className="w-4 h-4 text-[#10b981]" />
-              ) : (
-                <Battery className="w-4 h-4 text-gray-400" />
-              )}
-              <div>
-                <div className="text-xs font-semibold text-white">Bateria</div>
-                <div className="text-[11px] text-gray-400">
-                  {hardwareState.isCharging ? 'Ładowanie aktywne' : 'Praca na baterii'}
-                </div>
-              </div>
-            </div>
-            <span className="text-xs font-bold text-[#00e5ff] font-mono">
-              {hardwareState.batteryPercent}%
-            </span>
-          </div>
-
-          {/* Bluetooth Switch */}
-          <div className="flex items-center justify-between py-1.5 border-b border-white/5">
-            <div className="flex items-center gap-2.5">
-              <Bluetooth
+              <ShieldCheck
                 className={`w-4 h-4 ${
-                  hardwareState.isBluetoothEnabled ? 'text-[#00e5ff]' : 'text-gray-400'
+                  hardwareState.isAccessibilityActive ? 'text-[#10b981]' : 'text-gray-400'
                 }`}
               />
               <div>
-                <div className="text-xs font-semibold text-white">Bluetooth</div>
+                <div className="text-xs font-semibold text-white">
+                  Usługa Dostępności (AccessibilityService)
+                </div>
                 <div className="text-[11px] text-gray-400">
-                  {hardwareState.isBluetoothEnabled ? 'Włączony' : 'Wyłączony'}
+                  {hardwareState.isAccessibilityActive
+                    ? 'Aktywna - automatyzacja kliknięć i czytanie drzewa UI innych aplikacji'
+                    : 'Wymagane uprawnienie do automatyzacji innych aplikacji'}
                 </div>
               </div>
             </div>
             <label className="relative inline-flex items-center cursor-pointer">
               <input
                 type="checkbox"
-                checked={hardwareState.isBluetoothEnabled}
-                onChange={onToggleBluetooth}
-                data-testid="bluetooth_switch"
+                checked={hardwareState.isAccessibilityActive}
+                onChange={onToggleAccessibility}
+                className="sr-only peer"
+              />
+              <div className="w-11 h-6 bg-[#1e2638] peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-[#10b981]"></div>
+            </label>
+          </div>
+
+          {/* 3. Screen Capture & Resolution (MediaProjection) */}
+          <div className="py-2 border-b border-white/5 space-y-2">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2.5">
+                <Eye className={`w-4 h-4 ${agentServices.screenCaptureEnabled ? 'text-[#8b5cf6]' : 'text-gray-400'}`} />
+                <div>
+                  <div className="text-xs font-semibold text-white">
+                    Przechwytywanie Ekranu (MediaProjection OCR / VLM)
+                  </div>
+                  <div className="text-[11px] text-gray-400">
+                    Pobieranie klatek ekranu do analizy zawartości i skanowania pulpitu
+                  </div>
+                </div>
+              </div>
+              <label className="relative inline-flex items-center cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={agentServices.screenCaptureEnabled}
+                  onChange={(e) =>
+                    deviceProfileManager.updateServicesConfig({ screenCaptureEnabled: e.target.checked })
+                  }
+                  className="sr-only peer"
+                />
+                <div className="w-11 h-6 bg-[#1e2638] peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-[#8b5cf6]"></div>
+              </label>
+            </div>
+
+            {agentServices.screenCaptureEnabled && (
+              <div className="flex items-center justify-between pt-1 text-xs">
+                <span className="text-gray-400 text-[11px]">Rozdzielczość zrzutu (oszczędzanie RAM):</span>
+                <div className="flex gap-1">
+                  {(['1080p', '720p', '480p'] as const).map((q) => (
+                    <button
+                      key={q}
+                      type="button"
+                      onClick={() => deviceProfileManager.updateServicesConfig({ screenCaptureQuality: q })}
+                      className={`px-2.5 py-0.5 rounded-lg text-[10px] font-mono font-bold transition-all ${
+                        agentServices.screenCaptureQuality === q
+                          ? 'bg-[#8b5cf6] text-white'
+                          : 'bg-[#1e2638] text-gray-400 hover:text-white'
+                      }`}
+                    >
+                      {q}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+
+          {/* 4. Continuous Background Wake Word Service */}
+          <div className="py-2 border-b border-white/5 space-y-2">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2.5">
+                <Mic className={`w-4 h-4 ${agentServices.backgroundHotwordEnabled ? 'text-[#00e5ff]' : 'text-gray-400'}`} />
+                <div>
+                  <div className="text-xs font-semibold text-white">
+                    Ciągły nasłuch w tle („Hej Cogni” Wake Word)
+                  </div>
+                  <div className="text-[11px] text-gray-400">
+                    Wykrywanie słowa wybudzającego przy wyłączonym ekranie i w innych aplikacjach
+                  </div>
+                </div>
+              </div>
+              <label className="relative inline-flex items-center cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={agentServices.backgroundHotwordEnabled}
+                  onChange={(e) =>
+                    deviceProfileManager.updateServicesConfig({ backgroundHotwordEnabled: e.target.checked })
+                  }
+                  className="sr-only peer"
+                />
+                <div className="w-11 h-6 bg-[#1e2638] peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-[#00e5ff]"></div>
+              </label>
+            </div>
+
+            {agentServices.backgroundHotwordEnabled && (
+              <div className="flex items-center justify-between pt-1 text-xs">
+                <span className="text-gray-400 text-[11px]">Czułość mikrofonu w tle:</span>
+                <div className="flex gap-1">
+                  {(['low', 'medium', 'high'] as const).map((s) => (
+                    <button
+                      key={s}
+                      type="button"
+                      onClick={() => deviceProfileManager.updateServicesConfig({ hotwordSensitivity: s })}
+                      className={`px-2 py-0.5 rounded-lg text-[10px] font-semibold transition-all ${
+                        agentServices.hotwordSensitivity === s
+                          ? 'bg-[#00e5ff] text-black font-bold'
+                          : 'bg-[#1e2638] text-gray-400 hover:text-white'
+                      }`}
+                    >
+                      {s === 'low' ? 'Niska' : s === 'medium' ? 'Średnia' : 'Wysoka'}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+
+          {/* 5. Notification Listener Access */}
+          <div className="flex items-center justify-between py-2 border-b border-white/5">
+            <div className="flex items-center gap-2.5">
+              <Zap
+                className={`w-4 h-4 ${
+                  hardwareState.isNotificationListenerActive ? 'text-amber-400' : 'text-gray-400'
+                }`}
+              />
+              <div>
+                <div className="text-xs font-semibold text-white">
+                  Dostęp do Powiadomień (NotificationListenerService)
+                </div>
+                <div className="text-[11px] text-gray-400">
+                  {hardwareState.isNotificationListenerActive
+                    ? 'Aktywny - odczyt powiadomień WhatsApp, Gmail, SMS'
+                    : 'Wyłączony'}
+                </div>
+              </div>
+            </div>
+            <label className="relative inline-flex items-center cursor-pointer">
+              <input
+                type="checkbox"
+                checked={hardwareState.isNotificationListenerActive}
+                onChange={onToggleNotifications}
+                className="sr-only peer"
+              />
+              <div className="w-11 h-6 bg-[#1e2638] peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-amber-400"></div>
+            </label>
+          </div>
+
+          {/* 6. Process Wakelock & Low Memory Killer Guard */}
+          <div className="flex items-center justify-between py-2 border-b border-white/5">
+            <div className="flex items-center gap-2.5">
+              <ShieldCheck
+                className={`w-4 h-4 ${agentServices.batteryExemptionGranted ? 'text-[#10b981]' : 'text-gray-400'}`}
+              />
+              <div>
+                <div className="text-xs font-semibold text-white">
+                  Ochrona procesu asystenta (Wakelock & LMK Guard)
+                </div>
+                <div className="text-[11px] text-gray-400">
+                  Wyłączenie optymalizacji baterii (chroni przed ubijaniem przy małej ilości RAM)
+                </div>
+              </div>
+            </div>
+            <label className="relative inline-flex items-center cursor-pointer">
+              <input
+                type="checkbox"
+                checked={agentServices.batteryExemptionGranted}
+                onChange={(e) =>
+                  deviceProfileManager.updateServicesConfig({ batteryExemptionGranted: e.target.checked })
+                }
+                className="sr-only peer"
+              />
+              <div className="w-11 h-6 bg-[#1e2638] peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-[#10b981]"></div>
+            </label>
+          </div>
+
+          {/* 7. Autostart on Device Boot */}
+          <div className="flex items-center justify-between py-2 border-b border-white/5">
+            <div className="flex items-center gap-2.5">
+              <RefreshCw
+                className={`w-4 h-4 ${agentServices.bootAutostartEnabled ? 'text-[#00e5ff]' : 'text-gray-400'}`}
+              />
+              <div>
+                <div className="text-xs font-semibold text-white">
+                  Autostart po włączeniu telefonu (BOOT_COMPLETED)
+                </div>
+                <div className="text-[11px] text-gray-400">
+                  Automatyczne uruchomienie dymka i usług asystenta zaraz po uruchomieniu telefonu
+                </div>
+              </div>
+            </div>
+            <label className="relative inline-flex items-center cursor-pointer">
+              <input
+                type="checkbox"
+                checked={agentServices.bootAutostartEnabled}
+                onChange={(e) =>
+                  deviceProfileManager.updateServicesConfig({ bootAutostartEnabled: e.target.checked })
+                }
                 className="sr-only peer"
               />
               <div className="w-11 h-6 bg-[#1e2638] peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-[#00e5ff]"></div>
             </label>
           </div>
 
-          {/* Flashlight Switch */}
-          <div className="flex items-center justify-between py-1.5 border-b border-white/5">
+          {/* 8. Haptic Feedback on Action */}
+          <div className="flex items-center justify-between py-2 border-b border-white/5">
             <div className="flex items-center gap-2.5">
-              <Flashlight
-                className={`w-4 h-4 ${hardwareState.isTorchOn ? 'text-amber-400' : 'text-gray-400'}`}
+              <Sparkles
+                className={`w-4 h-4 ${agentServices.hapticFeedbackOnAction ? 'text-[#8b5cf6]' : 'text-gray-400'}`}
               />
               <div>
                 <div className="text-xs font-semibold text-white">
-                  Latarka LED (Camera Torch)
+                  Wibracja potwierdzenia akcji (Haptic Feedback)
                 </div>
                 <div className="text-[11px] text-gray-400">
-                  {hardwareState.isTorchOn ? 'Dioda aktywna' : 'Dioda wyłączona'}
+                  Krótka wibracja haptyczna przy automatycznym kliknięciu w innej aplikacji lub rutynie
                 </div>
               </div>
             </div>
             <label className="relative inline-flex items-center cursor-pointer">
               <input
                 type="checkbox"
-                checked={hardwareState.isTorchOn}
-                onChange={onToggleTorch}
-                data-testid="torch_switch"
+                checked={agentServices.hapticFeedbackOnAction}
+                onChange={(e) =>
+                  deviceProfileManager.updateServicesConfig({ hapticFeedbackOnAction: e.target.checked })
+                }
                 className="sr-only peer"
               />
-              <div className="w-11 h-6 bg-[#1e2638] peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-amber-400"></div>
+              <div className="w-11 h-6 bg-[#1e2638] peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-[#8b5cf6]"></div>
             </label>
           </div>
 
@@ -775,6 +1119,234 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
             >
               <FileCode className="w-4 h-4" />
               <span>Importuj Makra</span>
+            </button>
+          </div>
+        </div>
+
+        {/* Card 6: Security Policy & Human-in-the-Loop Guardrails */}
+        <div
+          data-testid="security_policy_card"
+          className="bg-[#121824] border border-[#2d3748] rounded-2xl p-4 shadow-sm space-y-4"
+        >
+          <div className="flex items-center justify-between flex-wrap gap-2">
+            <div className="flex items-center gap-3">
+              <div className="w-9 h-9 rounded-xl bg-red-500/20 border border-red-500/40 flex items-center justify-center shrink-0">
+                <ShieldAlert className="w-5 h-5 text-red-400" />
+              </div>
+              <div>
+                <h2 className="text-sm sm:text-base font-bold text-white flex items-center gap-2">
+                  <span>Polityka Bezpieczeństwa & Ręczna Autoryzacja</span>
+                  <span className="bg-red-500/20 text-red-400 border border-red-500/30 text-[10px] font-mono px-2 py-0.5 rounded-full font-bold">
+                    {securityPolicy.securityMode === 'SMART_RISK_ANALYSIS'
+                      ? 'TRYB SMART'
+                      : securityPolicy.securityMode === 'STRICT_CONFIRMATION'
+                      ? 'TRYB ŚCISŁY'
+                      : 'AUTONOMICZNY'}
+                  </span>
+                </h2>
+                <p className="text-[11px] text-gray-400">
+                  Wymagaj ręcznego zatwierdzenia dla plików, wiadomości, połączeń i płatności
+                </p>
+              </div>
+            </div>
+
+            <button
+              type="button"
+              onClick={() => setShowAuditModal(true)}
+              className="px-2.5 py-1.5 rounded-xl bg-[#1e2638] hover:bg-[#2d3748] text-[#00e5ff] text-xs font-semibold flex items-center gap-1.5 border border-white/5 transition-colors"
+            >
+              <FileText className="w-3.5 h-3.5" />
+              <span>Dziennik Audytu ({auditLog.length})</span>
+            </button>
+          </div>
+
+          {/* Mode Selection */}
+          <div className="space-y-1.5">
+            <label className="block text-xs font-semibold text-gray-300">
+              Główny tryb ochrony (Guardrail Mode):
+            </label>
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+              <button
+                type="button"
+                onClick={() => securityManager.updatePolicy({ securityMode: 'SMART_RISK_ANALYSIS' })}
+                className={`p-3 rounded-xl border text-left transition-all ${
+                  securityPolicy.securityMode === 'SMART_RISK_ANALYSIS'
+                    ? 'bg-[#00e5ff]/15 border-[#00e5ff] text-white shadow-[0_0_12px_rgba(0,229,255,0.2)]'
+                    : 'bg-[#0a0e14] border-white/5 text-gray-400 hover:text-white'
+                }`}
+              >
+                <div className="text-xs font-bold text-[#00e5ff] mb-0.5 flex items-center gap-1.5">
+                  <span>🧠 Tryb Smart (Zalecany)</span>
+                </div>
+                <div className="text-[10px] text-gray-400 leading-tight">
+                  Analiza ryzyka AI. Potwierdzenie tylko dla niebezpiecznych operacji.
+                </div>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => securityManager.updatePolicy({ securityMode: 'STRICT_CONFIRMATION' })}
+                className={`p-3 rounded-xl border text-left transition-all ${
+                  securityPolicy.securityMode === 'STRICT_CONFIRMATION'
+                    ? 'bg-amber-500/15 border-amber-500 text-white shadow-[0_0_12px_rgba(245,158,11,0.2)]'
+                    : 'bg-[#0a0e14] border-white/5 text-gray-400 hover:text-white'
+                }`}
+              >
+                <div className="text-xs font-bold text-amber-400 mb-0.5 flex items-center gap-1.5">
+                  <span>🛡️ Tryb Ścisły (Strict)</span>
+                </div>
+                <div className="text-[10px] text-gray-400 leading-tight">
+                  Bezwzględne żądanie kliknięcia zgody dla każdej zaznaczonej kategorii.
+                </div>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => securityManager.updatePolicy({ securityMode: 'AUTONOMOUS' })}
+                className={`p-3 rounded-xl border text-left transition-all ${
+                  securityPolicy.securityMode === 'AUTONOMOUS'
+                    ? 'bg-rose-500/15 border-rose-500 text-white shadow-[0_0_12px_rgba(244,63,94,0.2)]'
+                    : 'bg-[#0a0e14] border-white/5 text-gray-400 hover:text-white'
+                }`}
+              >
+                <div className="text-xs font-bold text-rose-400 mb-0.5 flex items-center gap-1.5">
+                  <span>⚡ Pełna Autonomia</span>
+                </div>
+                <div className="text-[10px] text-gray-400 leading-tight">
+                  Wszystkie akcje bez potwierdzeń (dla zaawansowanych użytkowników).
+                </div>
+              </button>
+            </div>
+          </div>
+
+          {/* Granular Security Category Toggles */}
+          <div className="bg-[#0a0e14] p-3 rounded-xl border border-white/5 space-y-2 text-xs">
+            <div className="text-xs font-bold text-gray-300 mb-1">
+              Kategorie operacji wymagające ręcznego potwierdzenia:
+            </div>
+
+            {/* 1. File modifications */}
+            <div className="flex items-center justify-between py-1.5 border-b border-white/5">
+              <div className="flex items-center gap-2">
+                <FileText className="w-4 h-4 text-amber-400 shrink-0" />
+                <div>
+                  <div className="font-semibold text-white">Modyfikacja i usuwanie plików w telefonie</div>
+                  <div className="text-[10px] text-gray-400">Usuwanie, edycja dokumentów, zdjęć i pamięci masowej</div>
+                </div>
+              </div>
+              <label className="relative inline-flex items-center cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={securityPolicy.confirmFileModifications}
+                  onChange={(e) => securityManager.updatePolicy({ confirmFileModifications: e.target.checked })}
+                  className="sr-only peer"
+                />
+                <div className="w-9 h-5 bg-[#1e2638] peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-amber-500"></div>
+              </label>
+            </div>
+
+            {/* 2. Messaging & Calls */}
+            <div className="flex items-center justify-between py-1.5 border-b border-white/5">
+              <div className="flex items-center gap-2">
+                <MessageSquare className="w-4 h-4 text-[#00e5ff] shrink-0" />
+                <div>
+                  <div className="font-semibold text-white">Wysyłanie wiadomości SMS/Email i połączenia tel.</div>
+                  <div className="text-[10px] text-gray-400">Wysyłanie SMS, email, nawiązywanie połączeń głosowych</div>
+                </div>
+              </div>
+              <label className="relative inline-flex items-center cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={securityPolicy.confirmMessagingAndCalls}
+                  onChange={(e) => securityManager.updatePolicy({ confirmMessagingAndCalls: e.target.checked })}
+                  className="sr-only peer"
+                />
+                <div className="w-9 h-5 bg-[#1e2638] peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-[#00e5ff]"></div>
+              </label>
+            </div>
+
+            {/* 3. App Purchases */}
+            <div className="flex items-center justify-between py-1.5 border-b border-white/5">
+              <div className="flex items-center gap-2">
+                <DollarSign className="w-4 h-4 text-emerald-400 shrink-0" />
+                <div>
+                  <div className="font-semibold text-white">Transakcje i zakupy w aplikacjach („Kup teraz”)</div>
+                  <div className="text-[10px] text-gray-400">Klikanie przycisków płatności, zamówień i przelewów</div>
+                </div>
+              </div>
+              <label className="relative inline-flex items-center cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={securityPolicy.confirmAppPurchases}
+                  onChange={(e) => securityManager.updatePolicy({ confirmAppPurchases: e.target.checked })}
+                  className="sr-only peer"
+                />
+                <div className="w-9 h-5 bg-[#1e2638] peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-emerald-500"></div>
+              </label>
+            </div>
+
+            {/* 4. Sensitive System Settings */}
+            <div className="flex items-center justify-between py-1.5 border-b border-white/5">
+              <div className="flex items-center gap-2">
+                <Lock className="w-4 h-4 text-rose-400 shrink-0" />
+                <div>
+                  <div className="font-semibold text-white">Krytyczne ustawienia systemowe i uprawnienia</div>
+                  <div className="text-[10px] text-gray-400">Czyszczenie pamięci podręcznej, odinstalowywanie, reset</div>
+                </div>
+              </div>
+              <label className="relative inline-flex items-center cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={securityPolicy.confirmSensitiveSystemSettings}
+                  onChange={(e) => securityManager.updatePolicy({ confirmSensitiveSystemSettings: e.target.checked })}
+                  className="sr-only peer"
+                />
+                <div className="w-9 h-5 bg-[#1e2638] peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-rose-500"></div>
+              </label>
+            </div>
+
+            {/* 5. Biometric Prompt */}
+            <div className="flex items-center justify-between py-1.5">
+              <div className="flex items-center gap-2">
+                <Fingerprint className="w-4 h-4 text-[#8b5cf6] shrink-0" />
+                <div>
+                  <div className="font-semibold text-white">Wymagaj autoryzacji odciskiem palca (Biometria)</div>
+                  <div className="text-[10px] text-gray-400">Dodatkowa ochrona biometryczna dla akcji o ryzyku krytycznym</div>
+                </div>
+              </div>
+              <label className="relative inline-flex items-center cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={securityPolicy.requireBiometricPrompt}
+                  onChange={(e) => securityManager.updatePolicy({ requireBiometricPrompt: e.target.checked })}
+                  className="sr-only peer"
+                />
+                <div className="w-9 h-5 bg-[#1e2638] peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-[#8b5cf6]"></div>
+              </label>
+            </div>
+          </div>
+
+          {/* Test & Simulation button */}
+          <div className="pt-1">
+            <button
+              type="button"
+              onClick={() => {
+                securityManager.requestUserAuthorization({
+                  actionTitle: 'Wysłanie wiadomości SMS do kontaktu Jan Kowalski',
+                  category: 'communication',
+                  riskLevel: 'HIGH',
+                  riskReason: 'Asystent zamierza wysłać wiadomość o treści: „Spotkanie przełożone na 16:00” w Twoim imieniu z telefonu.',
+                  commandText: 'Wyślij wiadomość do Jan Kowalski: Spotkanie przełożone na 16:00',
+                  parameters: {
+                    Odbiorca: 'Jan Kowalski (+48 600 123 456)',
+                    Treść: 'Spotkanie przełożone na 16:00'
+                  }
+                });
+              }}
+              className="w-full py-2.5 px-4 rounded-xl bg-gradient-to-r from-red-600/30 via-red-500/20 to-amber-600/30 hover:bg-red-600/40 text-red-200 text-xs font-bold border border-red-500/30 transition-all flex items-center justify-center gap-2"
+            >
+              <ShieldAlert className="w-4 h-4 text-red-400" />
+              <span>🧪 Przetestuj okno autoryzacji (Symulacja wysłania wiadomości)</span>
             </button>
           </div>
         </div>
@@ -815,6 +1387,96 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
                 className="px-4 py-2 bg-[#8b5cf6] text-white text-xs font-bold rounded-xl"
               >
                 Zaimportuj
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Security Audit Log Modal */}
+      {showAuditModal && (
+        <div className="fixed inset-0 bg-black/85 backdrop-blur-sm z-50 flex items-center justify-center p-3 sm:p-4">
+          <div className="bg-[#121824] border border-[#2d3748] rounded-3xl w-full max-w-2xl max-h-[85vh] flex flex-col shadow-2xl overflow-hidden animate-fadeIn">
+            <div className="p-4 bg-[#151e2e] border-b border-[#2d3748] flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <div className="w-9 h-9 rounded-xl bg-[#00e5ff]/20 border border-[#00e5ff]/30 flex items-center justify-center">
+                  <FileText className="w-5 h-5 text-[#00e5ff]" />
+                </div>
+                <div>
+                  <h3 className="text-sm font-bold text-white">Dziennik Audytu Bezpieczeństwa</h3>
+                  <p className="text-[11px] text-gray-400">
+                    Rejestr wszystkich zatwierdzonych, zablokowanych i dopuszczonych operacji agenta
+                  </p>
+                </div>
+              </div>
+
+              <button
+                type="button"
+                onClick={() => setShowAuditModal(false)}
+                className="text-gray-400 hover:text-white p-1 text-sm font-bold"
+              >
+                ✕
+              </button>
+            </div>
+
+            <div className="p-4 flex-1 overflow-y-auto space-y-2.5">
+              {auditLog.length === 0 ? (
+                <div className="p-8 text-center text-xs text-gray-400">
+                  Dziennik audytu jest pusty. Brak zarejestrowanych operacji.
+                </div>
+              ) : (
+                auditLog.map((item) => (
+                  <div
+                    key={item.id}
+                    className="p-3 bg-[#0a0e14] border border-white/5 rounded-2xl flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-xs"
+                  >
+                    <div className="space-y-1 min-w-0">
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <span
+                          className={`px-2 py-0.5 rounded-full text-[10px] font-bold font-mono ${
+                            item.status === 'APPROVED'
+                              ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30'
+                              : item.status === 'REJECTED'
+                              ? 'bg-red-500/20 text-red-400 border border-red-500/30'
+                              : 'bg-blue-500/20 text-blue-300 border border-blue-500/30'
+                          }`}
+                        >
+                          {item.status === 'APPROVED'
+                            ? '✓ ZATWIERDZONO'
+                            : item.status === 'REJECTED'
+                            ? '✕ ODRZUCONO'
+                            : '⚡ AUTO-ZGODA'}
+                        </span>
+
+                        <span className="font-semibold text-white truncate">{item.actionTitle}</span>
+                      </div>
+
+                      <div className="text-[11px] text-gray-400 pl-1">{item.details}</div>
+                    </div>
+
+                    <div className="text-[10px] font-mono text-gray-500 shrink-0 text-right">
+                      {new Date(item.timestamp).toLocaleString('pl-PL')}
+                    </div>
+                  </div>
+                ))
+              )}
+            </div>
+
+            <div className="p-3.5 bg-[#0a0e14] border-t border-[#2d3748] flex items-center justify-between">
+              <button
+                type="button"
+                onClick={() => securityManager.clearAuditLog()}
+                className="text-xs text-red-400 hover:text-red-300 px-3 py-1.5 rounded-xl hover:bg-red-950/30 transition-colors"
+              >
+                Wyczyść dziennik
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setShowAuditModal(false)}
+                className="px-4 py-2 bg-[#1e2638] hover:bg-[#2d3748] text-white text-xs font-bold rounded-xl transition-colors"
+              >
+                Zamknij
               </button>
             </div>
           </div>

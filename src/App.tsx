@@ -23,10 +23,19 @@ import { BottomNavBar } from './components/navigation/BottomNavBar';
 import { FloatingAssistantWidget } from './components/overlay/FloatingAssistantWidget';
 import { modelManager } from './services/modelManager';
 import { ModelManagerModal } from './components/models/ModelManagerModal';
+import { sessionManager } from './services/sessionManager';
+import { soundAndHaptics } from './services/soundAndHaptics';
+import { ActionAuthorizationModal } from './components/security/ActionAuthorizationModal';
 
 export const App: React.FC = () => {
   const [selectedTab, setSelectedTab] = useState<number>(0);
-  const [messages, setMessages] = useState<ChatMessage[]>(() => storage.getMessages());
+  const [activeSessionId, setActiveSessionId] = useState<string>(() => sessionManager.getActiveSessionId());
+  const [activeSessionTitle, setActiveSessionTitle] = useState<string>(
+    () => sessionManager.getActiveSession()?.title || 'Główny asystent'
+  );
+  const [messages, setMessages] = useState<ChatMessage[]>(() =>
+    sessionManager.getMessages(sessionManager.getActiveSessionId())
+  );
   const [skills, setSkills] = useState<SkillEntity[]>(() => storage.getSkills());
   const [triggers, setTriggers] = useState<RoutineTriggerEntity[]>(() => storage.getTriggers());
   const [hardwareState, setHardwareState] = useState<HardwareState>(() =>
@@ -56,6 +65,13 @@ export const App: React.FC = () => {
 
   // Subscriptions & Initializations
   useEffect(() => {
+    // Session Manager Subscription
+    const unsubSessions = sessionManager.subscribe((sessions, actId) => {
+      setActiveSessionId(actId);
+      const active = sessions.find((s) => s.id === actId);
+      if (active) setActiveSessionTitle(active.title);
+    });
+
     // Model Manager Subscription
     const unsubModels = modelManager.subscribeModelList(() => {
       const active = modelManager.getActiveModel();
@@ -77,6 +93,7 @@ export const App: React.FC = () => {
         const skill = allSkills.find((s) => s.name === t.associatedSkillName);
         if (skill) {
           console.log(`Trigger fired: ${triggerType} -> running ${skill.name}`);
+          soundAndHaptics.playSuccessChime();
           routineExecutor.executeActionsJson(skill.actionsJson);
         }
       });
@@ -99,6 +116,7 @@ export const App: React.FC = () => {
     });
 
     return () => {
+      unsubSessions();
       unsubModels();
       unsubHw();
       unsubTriggers();
@@ -107,10 +125,17 @@ export const App: React.FC = () => {
     };
   }, []);
 
-  // Save messages changes
+  // Save messages changes in active session
   useEffect(() => {
-    storage.saveMessages(messages);
-  }, [messages]);
+    sessionManager.saveMessages(activeSessionId, messages);
+  }, [messages, activeSessionId]);
+
+  const handleSwitchSession = (sessionId: string) => {
+    setActiveSessionId(sessionId);
+    setMessages(sessionManager.getMessages(sessionId));
+    const s = sessionManager.getSessions().find((sess) => sess.id === sessionId);
+    if (s) setActiveSessionTitle(s.title);
+  };
 
   // Save skills changes
   useEffect(() => {
@@ -213,6 +238,7 @@ export const App: React.FC = () => {
           lower.includes('cogni') ||
           lower.includes('asystencie')
         ) {
+          soundAndHaptics.playWakeWordChime();
           cleaned = transcript
             .replace(/hej\s+cogni/gi, '')
             .replace(/cogni/gi, '')
@@ -303,12 +329,23 @@ export const App: React.FC = () => {
   };
 
   // Triggers CRUD
-  const handleSaveTrigger = (triggerType: string, skillName: string) => {
+  const handleSaveTrigger = (
+    triggerType: string,
+    skillName: string,
+    timeSchedule?: string,
+    daysOfWeek?: string[],
+    geofenceLocation?: string,
+    bluetoothDeviceName?: string
+  ) => {
     const newTrigger: RoutineTriggerEntity = {
       id: Date.now(),
       triggerType,
       associatedSkillName: skillName,
-      enabled: true
+      enabled: true,
+      timeSchedule,
+      daysOfWeek,
+      geofenceLocation,
+      bluetoothDeviceName
     };
     setTriggers((prev) => [newTrigger, ...prev]);
   };
@@ -455,6 +492,8 @@ export const App: React.FC = () => {
             wakeWordActive={wakeWordActive}
             rmsLevel={rmsLevel}
             activeModelName={activeModelName}
+            activeSessionTitle={activeSessionTitle}
+            onSwitchSession={handleSwitchSession}
             onSendMessage={handleSendMessage}
             onStartVoice={handleStartVoice}
             onStopVoice={handleStopVoice}
@@ -534,6 +573,9 @@ export const App: React.FC = () => {
         onClose={() => setIsModelModalOpen(false)}
         onModelChanged={(model) => setActiveModelName(model.name)}
       />
+
+      {/* Human-in-the-Loop Action Authorization Guardrail Modal */}
+      <ActionAuthorizationModal />
     </div>
   );
 };

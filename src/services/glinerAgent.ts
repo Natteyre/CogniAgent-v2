@@ -205,16 +205,38 @@ export class GlinerAgent {
 
     // 13. Screen Inspection & Summary
     if (
+      lower.includes('przetłumacz ekran') ||
+      lower.includes('przetlumacz ekran') ||
+      lower.includes('wyjaśnij ekran')
+    ) {
+      entities.push({ label: 'action', value: 'translate_screen' });
+      return { originalText: normalized, intentType: 'TRANSLATE_SCREEN', entities, confidence: 0.96 };
+    }
+
+    if (
       lower.includes('na ekranie') ||
       lower.includes('podsumuj ekran') ||
       lower.includes('przeczytaj ekran') ||
-      lower.includes('co tu pisze')
+      lower.includes('co tu pisze') ||
+      lower.includes('co jest na ekranie')
     ) {
       entities.push({ label: 'action', value: 'summarize_screen' });
       return { originalText: normalized, intentType: 'SUMMARIZE_SCREEN', entities, confidence: 0.96 };
     }
 
-    // 14. Swipe gestures: "przewiń w dół", "przesuń w górę"
+    // 14. Notifications Reader
+    if (
+      lower.includes('powiadomien') ||
+      lower.includes('nowe wiadomości') ||
+      lower.includes('nowe wiadomosci') ||
+      lower.includes('ktoś pisał') ||
+      lower.includes('ktos pisal')
+    ) {
+      entities.push({ label: 'action', value: 'read_notifications' });
+      return { originalText: normalized, intentType: 'READ_NOTIFICATIONS', entities, confidence: 0.97 };
+    }
+
+    // 15. Swipe gestures: "przewiń w dół", "przesuń w górę"
     if (
       lower.includes('przewiń') ||
       lower.includes('przesuń') ||
@@ -228,7 +250,53 @@ export class GlinerAgent {
       return { originalText: normalized, intentType: 'SWIPE_SCREEN', entities, confidence: 0.95 };
     }
 
-    // 15. General query
+    // 16. In-App System Navigation (Back, Home, Recents)
+    if (lower === 'cofnij' || lower === 'wróć' || lower === 'wroc' || lower === 'powrót') {
+      entities.push({ label: 'action', value: 'navigate_back' });
+      return { originalText: normalized, intentType: 'NAVIGATE_BACK', entities, confidence: 0.98 };
+    }
+
+    if (lower.includes('ekran główny') || lower.includes('ekran glowny') || lower === 'pulpit' || lower === 'do domu') {
+      entities.push({ label: 'action', value: 'navigate_home' });
+      return { originalText: normalized, intentType: 'NAVIGATE_HOME', entities, confidence: 0.98 };
+    }
+
+    if (lower.includes('ostatnie aplikacje') || lower.includes('otwarte aplikacje') || lower.includes('menedżer zadań')) {
+      entities.push({ label: 'action', value: 'navigate_recents' });
+      return { originalText: normalized, intentType: 'NAVIGATE_RECENTS', entities, confidence: 0.98 };
+    }
+
+    // 17. Media Controls in foreground apps: "zatrzymaj", "wznów", "pauza"
+    if (lower === 'pauza' || lower.includes('zatrzymaj odtwarzanie') || lower.includes('zatrzymaj muzykę') || lower.includes('wznów odtwarzanie')) {
+      const isPause = !lower.includes('wznów');
+      entities.push({ label: 'action', value: isPause ? 'pause' : 'play' });
+      return { originalText: normalized, intentType: 'MEDIA_CONTROL', entities, confidence: 0.96 };
+    }
+
+    // 18. Skill Recording: "nagraj nowy skill", "rozpocznij nagrywanie"
+    if (
+      lower.includes('nagraj skill') ||
+      lower.includes('nagrywanie skilla') ||
+      lower.includes('nagraj makro') ||
+      lower.includes('rozpocznij nagrywanie') ||
+      lower.includes('zarejestruj skill')
+    ) {
+      entities.push({ label: 'action', value: 'start_recording' });
+      return { originalText: normalized, intentType: 'START_RECORDING_SKILL', entities, confidence: 0.98 };
+    }
+
+    // 19. Run Specific Skill / Macro: "uruchom skill [nazwa]", "wykonaj [nazwa]"
+    const runSkillMatch = /^(?:uruchom|wykonaj|włącz|wlacz|odpal)\s+(?:skill|rutynę|rutyne|makro)\s+(.+)$/i.exec(
+      normalized
+    );
+    if (runSkillMatch && runSkillMatch[1]) {
+      const skillName = runSkillMatch[1].trim();
+      entities.push({ label: 'action', value: 'run_skill' });
+      entities.push({ label: 'setting_name', value: skillName });
+      return { originalText: normalized, intentType: 'RUN_SKILL', entities, confidence: 0.96 };
+    }
+
+    // 20. General query
     entities.push({ label: 'action', value: 'general_query' });
     entities.push({ label: 'search_query', value: normalized });
     return { originalText: normalized, intentType: 'GENERAL_QUERY', entities, confidence: 0.85 };

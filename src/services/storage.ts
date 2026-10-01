@@ -23,7 +23,9 @@ const DEFAULT_SETTINGS: LlmSettings = {
   modelName: 'meta-llama/llama-3.1-8b-instruct:free',
   speechRate: 1.0,
   speechPitch: 1.0,
-  voiceLanguage: 'pl-PL'
+  voiceLanguage: 'pl-PL',
+  soundEffectsEnabled: true,
+  hapticFeedbackEnabled: true
 };
 
 const DEFAULT_SKILLS: SkillEntity[] = [
@@ -58,6 +60,21 @@ const DEFAULT_TRIGGERS: RoutineTriggerEntity[] = [
     triggerType: 'ACTION_POWER_CONNECTED',
     associatedSkillName: 'Poranny Rozruch',
     enabled: true
+  },
+  {
+    id: 2,
+    triggerType: 'TIME_SCHEDULE',
+    associatedSkillName: 'Poranny Rozruch',
+    enabled: true,
+    timeSchedule: '07:00',
+    daysOfWeek: ['MON', 'TUE', 'WED', 'THU', 'FRI']
+  },
+  {
+    id: 3,
+    triggerType: 'GEOFENCE_ENTER',
+    associatedSkillName: 'Tryb Kinowy',
+    enabled: false,
+    geofenceLocation: 'Dom'
   }
 ];
 

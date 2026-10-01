@@ -15,12 +15,21 @@ import {
   BellOff,
   Sun,
   X,
-  Cpu
+  Cpu,
+  Bell,
+  Layers,
+  Sparkles,
+  ChevronDown
 } from 'lucide-react';
 import { ChatMessage, HardwareState } from '../../types';
 import { ChatMessageBubble } from './ChatMessageBubble';
 import { NeonAudioVisualizer } from './NeonAudioVisualizer';
 import { hardwareManager } from '../../services/hardwareManager';
+import { notificationManager } from '../../services/notificationManager';
+import { NotificationCenterModal } from '../notifications/NotificationCenterModal';
+import { MemoryManagerModal } from '../memory/MemoryManagerModal';
+import { SessionDrawerModal } from './SessionDrawerModal';
+import { ScreenInspectionModal } from '../screen/ScreenInspectionModal';
 
 interface ChatScreenProps {
   messages: ChatMessage[];
@@ -31,6 +40,8 @@ interface ChatScreenProps {
   wakeWordActive: boolean;
   rmsLevel: number;
   activeModelName?: string;
+  activeSessionTitle?: string;
+  onSwitchSession?: (sessionId: string) => void;
   onSendMessage: (text: string) => void;
   onStartVoice: () => void;
   onStopVoice: () => void;
@@ -51,6 +62,8 @@ export const ChatScreen: React.FC<ChatScreenProps> = ({
   wakeWordActive,
   rmsLevel,
   activeModelName,
+  activeSessionTitle,
+  onSwitchSession,
   onSendMessage,
   onStartVoice,
   onStopVoice,
@@ -63,7 +76,19 @@ export const ChatScreen: React.FC<ChatScreenProps> = ({
 }) => {
   const [inputText, setInputText] = useState('');
   const [showToolsMenu, setShowToolsMenu] = useState(false);
+  const [isSessionModalOpen, setIsSessionModalOpen] = useState(false);
+  const [isNotifModalOpen, setIsNotifModalOpen] = useState(false);
+  const [isMemoryModalOpen, setIsMemoryModalOpen] = useState(false);
+  const [isScreenModalOpen, setIsScreenModalOpen] = useState(false);
+  const [unreadNotifCount, setUnreadNotifCount] = useState<number>(0);
   const messagesEndRef = useRef<HTMLDivElement | null>(null);
+
+  useEffect(() => {
+    const unsub = notificationManager.subscribe((_, unread) => {
+      setUnreadNotifCount(unread);
+    });
+    return unsub;
+  }, []);
 
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -171,6 +196,58 @@ export const ChatScreen: React.FC<ChatScreenProps> = ({
           </div>
         </div>
       </header>
+
+      {/* Sessions & Smart Tools Sub-Bar */}
+      <div className="bg-[#0e141f] border-b border-[#2d3748] px-3 sm:px-4 py-2 flex items-center justify-between gap-2 shrink-0">
+        <button
+          type="button"
+          onClick={() => setIsSessionModalOpen(true)}
+          className="flex items-center gap-1.5 px-2.5 py-1 rounded-xl bg-[#152033] hover:bg-[#1a2840] border border-[#2d3748] hover:border-[#00e5ff]/40 text-xs text-white transition-all min-w-0"
+        >
+          <Layers className="w-3.5 h-3.5 text-[#00e5ff] shrink-0" />
+          <span className="font-semibold truncate max-w-[130px] sm:max-w-[200px]">
+            {activeSessionTitle || 'Główny asystent'}
+          </span>
+          <ChevronDown className="w-3 h-3 text-gray-400 shrink-0" />
+        </button>
+
+        <div className="flex items-center gap-1.5 shrink-0">
+          {/* Notifications Button with unread badge */}
+          <button
+            type="button"
+            onClick={() => setIsNotifModalOpen(true)}
+            title="Centrum Powiadomień & Smart Reply"
+            className="relative p-1.5 rounded-xl bg-[#121824] hover:bg-[#1e2638] text-gray-300 hover:text-white border border-[#2d3748] transition-colors"
+          >
+            <Bell className="w-3.5 h-3.5" />
+            {unreadNotifCount > 0 && (
+              <span className="absolute -top-1 -right-1 bg-red-500 text-white font-bold text-[9px] w-4 h-4 rounded-full flex items-center justify-center animate-pulse">
+                {unreadNotifCount}
+              </span>
+            )}
+          </button>
+
+          {/* Screen Inspection Button */}
+          <button
+            type="button"
+            onClick={() => setIsScreenModalOpen(true)}
+            title="Wizualna Inspekcja Ekranu & OCR"
+            className="p-1.5 rounded-xl bg-[#121824] hover:bg-[#1e2638] text-gray-300 hover:text-[#00e5ff] border border-[#2d3748] transition-colors"
+          >
+            <Eye className="w-3.5 h-3.5" />
+          </button>
+
+          {/* Long-Term Memory Profile Button */}
+          <button
+            type="button"
+            onClick={() => setIsMemoryModalOpen(true)}
+            title="Pamięć Długoterminowa Asystenta"
+            className="p-1.5 rounded-xl bg-[#121824] hover:bg-[#1e2638] text-amber-300/80 hover:text-amber-300 border border-[#2d3748] transition-colors"
+          >
+            <Sparkles className="w-3.5 h-3.5" />
+          </button>
+        </div>
+      </div>
 
       {/* Active Timers Banner if any timer is running */}
       {hardwareState.activeTimers.length > 0 && (
@@ -378,6 +455,31 @@ export const ChatScreen: React.FC<ChatScreenProps> = ({
           </button>
         </div>
       </footer>
+
+      {/* Session Drawer Modal */}
+      <SessionDrawerModal
+        isOpen={isSessionModalOpen}
+        onClose={() => setIsSessionModalOpen(false)}
+        onSessionSwitched={(id) => onSwitchSession?.(id)}
+      />
+
+      {/* Android Notification Center Modal */}
+      <NotificationCenterModal
+        isOpen={isNotifModalOpen}
+        onClose={() => setIsNotifModalOpen(false)}
+      />
+
+      {/* Long-Term Memory Profile Modal */}
+      <MemoryManagerModal
+        isOpen={isMemoryModalOpen}
+        onClose={() => setIsMemoryModalOpen(false)}
+      />
+
+      {/* Visual Screen Inspection & OCR Modal */}
+      <ScreenInspectionModal
+        isOpen={isScreenModalOpen}
+        onClose={() => setIsScreenModalOpen(false)}
+      />
     </div>
   );
 };

@@ -1,4 +1,4 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import {
   Plus,
   Play,
@@ -15,9 +15,17 @@ import {
   Sparkles,
   Sliders,
   Sun,
-  BellOff
+  BellOff,
+  Clock,
+  MapPin,
+  Bluetooth,
+  Radio,
+  Navigation,
+  Video
 } from 'lucide-react';
 import { SkillEntity, RoutineTriggerEntity, ActionType, RoutineAction, RoutinesBackup } from '../../types';
+import { triggerScheduler } from '../../services/triggerScheduler';
+import { SkillRecorderModal } from './SkillRecorderModal';
 
 interface RoutinesScreenProps {
   skills: SkillEntity[];
@@ -25,7 +33,14 @@ interface RoutinesScreenProps {
   onExecuteSkill: (skill: SkillEntity) => void;
   onSaveSkill: (name: string, actions: RoutineAction[]) => void;
   onDeleteSkill: (id: number) => void;
-  onSaveTrigger: (triggerType: string, skillName: string) => void;
+  onSaveTrigger: (
+    triggerType: string,
+    skillName: string,
+    timeSchedule?: string,
+    daysOfWeek?: string[],
+    geofenceLocation?: string,
+    bluetoothDeviceName?: string
+  ) => void;
   onToggleTrigger: (trigger: RoutineTriggerEntity) => void;
   onDeleteTrigger: (id: number) => void;
   onExportJson?: () => string;
@@ -60,6 +75,7 @@ export const RoutinesScreen: React.FC<RoutinesScreenProps> = ({
 }) => {
   const [selectedTab, setSelectedTab] = useState<0 | 1>(0);
   const [showCreateSkillModal, setShowCreateSkillModal] = useState(false);
+  const [showRecorderModal, setShowRecorderModal] = useState(false);
   const [showCreateTriggerModal, setShowCreateTriggerModal] = useState(false);
   const [showBackupModal, setShowBackupModal] = useState(false);
   const [executingSkillId, setExecutingSkillId] = useState<number | null>(null);
@@ -74,6 +90,22 @@ export const RoutinesScreen: React.FC<RoutinesScreenProps> = ({
   // New Trigger Form State
   const [newTriggerType, setNewTriggerType] = useState('ACTION_POWER_CONNECTED');
   const [newTriggerSkill, setNewTriggerSkill] = useState(skills[0]?.name || '');
+  const [newTimeSchedule, setNewTimeSchedule] = useState('07:30');
+  const [newDaysOfWeek, setNewDaysOfWeek] = useState<string[]>(['MON', 'TUE', 'WED', 'THU', 'FRI']);
+  const [newGeofenceLocation, setNewGeofenceLocation] = useState('Dom');
+  const [newBluetoothDevice, setNewBluetoothDevice] = useState('Słuchawki Sony WH-1000XM4');
+
+  // Live simulation states from triggerScheduler
+  const [currentGeofence, setCurrentGeofence] = useState('Poza domem');
+  const [connectedBtDevice, setConnectedBtDevice] = useState<string | null>(null);
+
+  useEffect(() => {
+    const unsub = triggerScheduler.subscribe((geo, bt) => {
+      setCurrentGeofence(geo);
+      setConnectedBtDevice(bt);
+    });
+    return unsub;
+  }, []);
 
   // Backup State
   const [jsonText, setJsonText] = useState('');
@@ -95,7 +127,14 @@ export const RoutinesScreen: React.FC<RoutinesScreenProps> = ({
 
   const handleSaveTrigger = () => {
     if (newTriggerSkill.trim()) {
-      onSaveTrigger(newTriggerType, newTriggerSkill.trim());
+      onSaveTrigger(
+        newTriggerType,
+        newTriggerSkill.trim(),
+        newTriggerType === 'TIME_SCHEDULE' ? newTimeSchedule : undefined,
+        newTriggerType === 'TIME_SCHEDULE' ? newDaysOfWeek : undefined,
+        newTriggerType.startsWith('GEOFENCE') ? newGeofenceLocation : undefined,
+        newTriggerType.startsWith('BLUETOOTH') ? newBluetoothDevice : undefined
+      );
       setShowCreateTriggerModal(false);
     }
   };
@@ -261,16 +300,28 @@ export const RoutinesScreen: React.FC<RoutinesScreenProps> = ({
       <div className="flex-1 p-4 space-y-4">
         {selectedTab === 0 ? (
           <div>
-            {/* Add Skill Button */}
-            <button
-              type="button"
-              onClick={() => setShowCreateSkillModal(true)}
-              data-testid="add_skill_button"
-              className="w-full flex items-center justify-center gap-2 py-3 px-4 rounded-xl bg-gradient-to-r from-[#00e5ff] to-[#00b4d8] text-[#0a0e14] font-bold text-sm shadow-[0_0_15px_rgba(0,229,255,0.25)] hover:opacity-95 transition-all mb-4"
-            >
-              <Plus className="w-5 h-5" />
-              <span>Stwórz nową umiejętność (+ Add Skill)</span>
-            </button>
+            {/* Action Buttons: Add Skill & Record Skill */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 mb-4">
+              <button
+                type="button"
+                onClick={() => setShowCreateSkillModal(true)}
+                data-testid="add_skill_button"
+                className="flex items-center justify-center gap-2 py-3 px-4 rounded-xl bg-gradient-to-r from-[#00e5ff] to-[#00b4d8] text-[#0a0e14] font-bold text-xs sm:text-sm shadow-[0_0_15px_rgba(0,229,255,0.25)] hover:opacity-95 transition-all"
+              >
+                <Plus className="w-4 h-4 sm:w-5 sm:h-5" />
+                <span>Ręczny edytor skilli (+ Add)</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setShowRecorderModal(true)}
+                data-testid="record_skill_button"
+                className="flex items-center justify-center gap-2 py-3 px-4 rounded-xl bg-gradient-to-r from-red-600 to-rose-700 text-white font-bold text-xs sm:text-sm shadow-[0_0_15px_rgba(239,68,68,0.3)] hover:opacity-95 active:scale-98 transition-all"
+              >
+                <div className="w-2.5 h-2.5 rounded-full bg-white animate-pulse"></div>
+                <span>🔴 Nagraj skill przez demonstrację</span>
+              </button>
+            </div>
 
             {skills.length === 0 ? (
               <div className="text-center py-12 px-4 rounded-2xl bg-[#121824] border border-[#2d3748] text-gray-400 text-sm">
@@ -329,7 +380,91 @@ export const RoutinesScreen: React.FC<RoutinesScreenProps> = ({
             )}
           </div>
         ) : (
-          <div>
+          <div className="space-y-4">
+            {/* Live Environment Simulator (Geofence & Bluetooth) */}
+            <div className="bg-[#121824] border border-[#2d3748] rounded-2xl p-4 space-y-3">
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-bold text-white flex items-center gap-1.5">
+                  <Radio className="w-4 h-4 text-[#00e5ff]" />
+                  <span>Symulator Środowiska (Geofence & Bluetooth)</span>
+                </span>
+                <span className="text-[10px] text-gray-400 font-mono">
+                  TriggerScheduler: Aktywny
+                </span>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                {/* Geofence Simulator */}
+                <div className="bg-[#0a0e14] p-3 rounded-xl border border-white/5 space-y-2">
+                  <div className="flex items-center justify-between text-xs">
+                    <span className="text-gray-400 flex items-center gap-1">
+                      <MapPin className="w-3.5 h-3.5 text-amber-400" />
+                      Lokalizacja:
+                    </span>
+                    <span className="font-bold text-[#00e5ff]">{currentGeofence}</span>
+                  </div>
+                  <div className="flex items-center gap-1.5 flex-wrap">
+                    <button
+                      type="button"
+                      onClick={() => triggerScheduler.simulateGeofenceEvent('Dom', 'ENTER')}
+                      className="px-2 py-1 bg-[#1e2638] hover:bg-[#2d3748] text-[11px] font-semibold text-gray-200 rounded-lg border border-white/5 active:scale-95"
+                    >
+                      Wejdź: Dom
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => triggerScheduler.simulateGeofenceEvent('Praca', 'ENTER')}
+                      className="px-2 py-1 bg-[#1e2638] hover:bg-[#2d3748] text-[11px] font-semibold text-gray-200 rounded-lg border border-white/5 active:scale-95"
+                    >
+                      Wejdź: Praca
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => triggerScheduler.simulateGeofenceEvent('Dom', 'EXIT')}
+                      className="px-2 py-1 bg-[#1e2638] hover:bg-[#2d3748] text-[11px] font-semibold text-gray-400 rounded-lg border border-white/5 active:scale-95"
+                    >
+                      Wyjdź
+                    </button>
+                  </div>
+                </div>
+
+                {/* Bluetooth Device Simulator */}
+                <div className="bg-[#0a0e14] p-3 rounded-xl border border-white/5 space-y-2">
+                  <div className="flex items-center justify-between text-xs">
+                    <span className="text-gray-400 flex items-center gap-1">
+                      <Bluetooth className="w-3.5 h-3.5 text-[#00e5ff]" />
+                      Urządzenie BT:
+                    </span>
+                    <span className="font-bold text-[#8b5cf6] truncate max-w-[120px]">
+                      {connectedBtDevice || 'Brak'}
+                    </span>
+                  </div>
+                  <div className="flex items-center gap-1.5 flex-wrap">
+                    <button
+                      type="button"
+                      onClick={() =>
+                        triggerScheduler.simulateBluetoothDeviceEvent('Słuchawki Sony WH-1000XM4', true)
+                      }
+                      className="px-2 py-1 bg-[#00e5ff]/15 hover:bg-[#00e5ff]/25 text-[11px] font-semibold text-[#00e5ff] rounded-lg border border-[#00e5ff]/30 active:scale-95"
+                    >
+                      Podłącz słuchawki
+                    </button>
+                    {connectedBtDevice && (
+                      <button
+                        type="button"
+                        onClick={() =>
+                          triggerScheduler.simulateBluetoothDeviceEvent(connectedBtDevice, false)
+                        }
+                        className="px-2 py-1 bg-red-500/15 hover:bg-red-500/25 text-[11px] font-semibold text-red-400 rounded-lg border border-red-500/30 active:scale-95"
+                      >
+                        Rozłącz
+                      </button>
+                    )}
+                  </div>
+                </div>
+              </div>
+            </div>
+
             {/* Add Trigger Button */}
             <button
               type="button"
@@ -346,17 +481,33 @@ export const RoutinesScreen: React.FC<RoutinesScreenProps> = ({
 
             {triggers.length === 0 ? (
               <div className="text-center py-12 px-4 rounded-2xl bg-[#121824] border border-[#2d3748] text-gray-400 text-sm">
-                Brak powiązanych wyzwalaczy. Możesz dodać reakcję na podłączenie lub odłączenie ładowarki.
+                Brak powiązanych wyzwalaczy. Możesz dodać harmonogram czasowy, strefę GPS lub ładowarkę.
               </div>
             ) : (
               <div className="space-y-3">
                 {triggers.map((trigger) => {
-                  const triggerLabel =
-                    trigger.triggerType === 'ACTION_POWER_CONNECTED'
-                      ? 'Podłączenie ładowarki (Power Connected)'
-                      : trigger.triggerType === 'ACTION_POWER_DISCONNECTED'
-                      ? 'Odłączenie ładowarki'
-                      : trigger.triggerType;
+                  let triggerLabel = trigger.triggerType;
+                  let icon = <Power className="w-5 h-5 text-[#8b5cf6]" />;
+
+                  if (trigger.triggerType === 'ACTION_POWER_CONNECTED') {
+                    triggerLabel = 'Podłączenie ładowarki (Power Connected)';
+                    icon = <Power className="w-5 h-5 text-[#10b981]" />;
+                  } else if (trigger.triggerType === 'ACTION_POWER_DISCONNECTED') {
+                    triggerLabel = 'Odłączenie ładowarki';
+                    icon = <Power className="w-5 h-5 text-amber-400" />;
+                  } else if (trigger.triggerType === 'TIME_SCHEDULE') {
+                    triggerLabel = `Harmonogram czasowy: ${trigger.timeSchedule || '07:00'}`;
+                    icon = <Clock className="w-5 h-5 text-[#00e5ff]" />;
+                  } else if (trigger.triggerType === 'GEOFENCE_ENTER') {
+                    triggerLabel = `Wejście do strefy: ${trigger.geofenceLocation || 'Dom'}`;
+                    icon = <MapPin className="w-5 h-5 text-amber-400" />;
+                  } else if (trigger.triggerType === 'GEOFENCE_EXIT') {
+                    triggerLabel = `Wyjście ze strefy: ${trigger.geofenceLocation || 'Dom'}`;
+                    icon = <Navigation className="w-5 h-5 text-gray-400" />;
+                  } else if (trigger.triggerType === 'BLUETOOTH_CONNECTED') {
+                    triggerLabel = `Połączono z: ${trigger.bluetoothDeviceName || 'Urządzenie BT'}`;
+                    icon = <Bluetooth className="w-5 h-5 text-[#00e5ff]" />;
+                  }
 
                   return (
                     <div
@@ -366,7 +517,7 @@ export const RoutinesScreen: React.FC<RoutinesScreenProps> = ({
                     >
                       <div className="flex items-center gap-3">
                         <div className="w-9 h-9 rounded-full bg-[#8b5cf6]/20 border border-[#8b5cf6]/30 flex items-center justify-center shrink-0">
-                          <Power className="w-5 h-5 text-[#8b5cf6]" />
+                          {icon}
                         </div>
                         <div>
                           <h3 className="font-bold text-sm text-white">{triggerLabel}</h3>
@@ -576,8 +727,70 @@ export const RoutinesScreen: React.FC<RoutinesScreenProps> = ({
                   <option value="ACTION_POWER_DISCONNECTED">
                     Odłączenie ładowarki (Power Disconnected)
                   </option>
+                  <option value="TIME_SCHEDULE">
+                    Harmonogram czasowy (Godzina & Dni)
+                  </option>
+                  <option value="GEOFENCE_ENTER">
+                    Geofence: Wejście do strefy (np. Dom, Praca)
+                  </option>
+                  <option value="GEOFENCE_EXIT">
+                    Geofence: Wyjście ze strefy
+                  </option>
+                  <option value="BLUETOOTH_CONNECTED">
+                    Połączenie z urządzeniem Bluetooth
+                  </option>
                 </select>
               </div>
+
+              {/* Dynamic input for TIME_SCHEDULE */}
+              {newTriggerType === 'TIME_SCHEDULE' && (
+                <div className="space-y-2 bg-[#0a0e14] p-3 rounded-xl border border-white/5 animate-fadeIn">
+                  <label className="block text-[11px] font-semibold text-[#00e5ff]">
+                    Godzina wykonania (HH:MM):
+                  </label>
+                  <input
+                    type="time"
+                    value={newTimeSchedule}
+                    onChange={(e) => setNewTimeSchedule(e.target.value)}
+                    className="w-full bg-[#152033] border border-[#2d3748] rounded-lg px-3 py-1.5 text-xs text-white outline-none focus:border-[#00e5ff]"
+                  />
+                  <div className="text-[10px] text-gray-400">
+                    Aktywne dni: Poniedziałek - Piątek (Dni robocze)
+                  </div>
+                </div>
+              )}
+
+              {/* Dynamic input for GEOFENCE */}
+              {newTriggerType.startsWith('GEOFENCE') && (
+                <div className="space-y-2 bg-[#0a0e14] p-3 rounded-xl border border-white/5 animate-fadeIn">
+                  <label className="block text-[11px] font-semibold text-amber-400">
+                    Nazwa strefy / lokalizacji:
+                  </label>
+                  <input
+                    type="text"
+                    value={newGeofenceLocation}
+                    onChange={(e) => setNewGeofenceLocation(e.target.value)}
+                    placeholder="Np. Dom, Praca, Siłownia"
+                    className="w-full bg-[#152033] border border-[#2d3748] rounded-lg px-3 py-1.5 text-xs text-white outline-none focus:border-amber-400"
+                  />
+                </div>
+              )}
+
+              {/* Dynamic input for BLUETOOTH */}
+              {newTriggerType.startsWith('BLUETOOTH') && (
+                <div className="space-y-2 bg-[#0a0e14] p-3 rounded-xl border border-white/5 animate-fadeIn">
+                  <label className="block text-[11px] font-semibold text-[#8b5cf6]">
+                    Nazwa urządzenia Bluetooth:
+                  </label>
+                  <input
+                    type="text"
+                    value={newBluetoothDevice}
+                    onChange={(e) => setNewBluetoothDevice(e.target.value)}
+                    placeholder="Np. Słuchawki Sony WH-1000XM4, Radio samochodowe"
+                    className="w-full bg-[#152033] border border-[#2d3748] rounded-lg px-3 py-1.5 text-xs text-white outline-none focus:border-[#8b5cf6]"
+                  />
+                </div>
+              )}
 
               <div>
                 <label className="block text-xs font-semibold text-gray-300 mb-1">
@@ -726,6 +939,15 @@ export const RoutinesScreen: React.FC<RoutinesScreenProps> = ({
           </div>
         </div>
       )}
+
+      {/* Modal: Skill Recorder (Demonstration Macro Recorder) */}
+      <SkillRecorderModal
+        isOpen={showRecorderModal}
+        onClose={() => setShowRecorderModal(false)}
+        onSkillSaved={(newSkill) => {
+          onSaveSkill(newSkill.name, JSON.parse(newSkill.actionsJson));
+        }}
+      />
     </div>
   );
 };

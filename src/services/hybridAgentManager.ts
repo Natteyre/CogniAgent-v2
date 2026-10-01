@@ -4,6 +4,14 @@ import { hardwareManager } from './hardwareManager';
 import { ttsManager } from './ttsManager';
 import { storage } from './storage';
 import { modelManager } from './modelManager';
+import { soundAndHaptics } from './soundAndHaptics';
+import { memoryManager } from './memoryManager';
+import { notificationManager } from './notificationManager';
+import { screenInspector } from './screenInspector';
+import { voiceRoutineBuilder } from './voiceRoutineBuilder';
+import { skillRecorder } from './skillRecorder';
+import { routineExecutor } from './routineExecutor';
+import { securityManager } from './securityManager';
 
 export interface ApiMessage {
   role: 'system' | 'user' | 'assistant' | 'tool';
@@ -173,8 +181,50 @@ export class HybridAgentManager {
     onToolExecuted?: (report: string) => void
   ): Promise<{ botResponse: string; toolSummary: string | null }> {
     const startTime = performance.now();
+    // Automatically extract personal facts and preferences to long-term memory
+    memoryManager.extractFactsFromConversation(userText);
+
+    // 1. Voice-to-Routine & Voice-to-Schedule builder:
+    // e.g. "Włącz Bluetooth, ustaw głośność na 80% i otwórz Spotify o godzinie 18"
+    const routineBuild = voiceRoutineBuilder.checkAndBuildRoutineFromVoice(userText);
+    if (routineBuild.isRoutineCreation && routineBuild.message) {
+      const inferenceDuration = Math.round(performance.now() - startTime);
+      this.recordTelemetry(inferenceDuration, true, 350);
+      ttsManager.speak(routineBuild.message);
+      return {
+        botResponse: routineBuild.message,
+        toolSummary: `Kreator rutyn: zapisano „${routineBuild.skillName}” (${routineBuild.timeSchedule ? `godzina ${routineBuild.timeSchedule}` : 'gotowy'})`
+      };
+    }
+
     const plan = glinerAgent.processCommand(userText);
     const inferenceDuration = Math.round(performance.now() - startTime);
+
+    // 2. Security & Human-in-the-Loop Risk Assessment
+    if (plan.subIntents.length > 0) {
+      for (const sub of plan.subIntents) {
+        const risk = securityManager.assessActionRisk(sub, userText);
+        if (risk.requiresConfirmation) {
+          const isApproved = await securityManager.requestUserAuthorization({
+            actionTitle: risk.actionTitle,
+            category: risk.category,
+            riskLevel: risk.riskLevel,
+            riskReason: risk.riskReason,
+            commandText: userText,
+            parameters: risk.parameters
+          });
+
+          if (!isApproved) {
+            const rejectMsg = `Operacja „${risk.actionTitle}” została zablokowana i anulowana przez użytkownika.`;
+            ttsManager.speak(rejectMsg);
+            return {
+              botResponse: rejectMsg,
+              toolSummary: `Polityka bezpieczeństwa: anulowano (${risk.riskLevel})`
+            };
+          }
+        }
+      }
+    }
 
     // Multi-Intent Compound Command (e.g. "otwórz aplikację youtube i wyszukaj filmy z kotami")
     if (plan.subIntents.length > 1) {
@@ -264,13 +314,15 @@ export class HybridAgentManager {
     history: ApiMessage[],
     onToolExecuted?: (report: string) => void
   ): Promise<{ botResponse: string; toolSummary: string | null }> {
+    const memoryPrompt = memoryManager.getMemoryContextPrompt();
     const messages: ApiMessage[] = [
       {
         role: 'system',
         content:
           'Jesteś CogniAgent v2, zaawansowanym asystentem AI zoptymalizowanym dla procesora Kirin 980. ' +
           'Odpowiadaj zwięźle, naturalnie i w języku polskim. Masz dostęp do narzędzi: web_search, read_file, ' +
-          'write_file, adjust_device_setting, open_application. Używaj narzędzi gdy to potrzebne.'
+          'write_file, adjust_device_setting, open_application. Używaj narzędzi gdy to potrzebne.' +
+          memoryPrompt
       },
       ...history.slice(-6),
       { role: 'user', content: userText }
@@ -459,12 +511,52 @@ export class HybridAgentManager {
         return `Kliknięto element interfejsu: '${text}'.`;
       }
       case 'SUMMARIZE_SCREEN': {
-        const title = document.title;
-        return `Na ekranie wyświetlany jest interfejs asystenta CogniAgent v2 (${title}). Wszystkie moduły działają stabilnie.`;
+        const inspection = screenInspector.inspectCurrentScreen();
+        soundAndHaptics.playSuccessChime();
+        return `${inspection.summary} Tytuł widoku: "${inspection.appTitle}". Wykryta treść OCR:\n${inspection.fullOcrText.slice(0, 240)}...`;
+      }
+      case 'TRANSLATE_SCREEN': {
+        return screenInspector.translateOrExplainScreen();
+      }
+      case 'READ_NOTIFICATIONS': {
+        return notificationManager.readNotificationsSummary();
       }
       case 'SWIPE_SCREEN': {
         const dir = intent.entities.find((e) => e.label === 'setting_value')?.value || 'down';
+        soundAndHaptics.triggerHaptic(25);
         return `Wykonano gest przesunięcia ekranu w ${dir === 'up' ? 'górę' : 'dół'}.`;
+      }
+      case 'NAVIGATE_BACK': {
+        soundAndHaptics.triggerHaptic(30);
+        return 'Wykonano akcję systemową: Wstecz (Cofnij).';
+      }
+      case 'NAVIGATE_HOME': {
+        soundAndHaptics.triggerHaptic(30);
+        return 'Przejście do ekranu głównego (Pulpit Androida).';
+      }
+      case 'NAVIGATE_RECENTS': {
+        soundAndHaptics.triggerHaptic(30);
+        return 'Otwarto listę ostatnich aplikacji (Menedżer zadań).';
+      }
+      case 'MEDIA_CONTROL': {
+        const action = intent.entities.find((e) => e.label === 'action')?.value || 'pause';
+        soundAndHaptics.triggerHaptic(25);
+        return action === 'pause' ? 'Wstrzymano odtwarzanie multimediów.' : 'Wznowiono odtwarzanie.';
+      }
+      case 'START_RECORDING_SKILL': {
+        skillRecorder.startRecording();
+        return 'Rozpoczęto nagrywanie nowego skilla. Przejdź do aplikacji i wykonaj czynności, a asystent zapisze sekwencję kroków.';
+      }
+      case 'RUN_SKILL': {
+        const targetName = (intent.entities.find((e) => e.label === 'setting_name')?.value || '').toLowerCase().trim();
+        const allSkills = storage.getSkills();
+        const matched = allSkills.find((s) => s.name.toLowerCase().includes(targetName) || targetName.includes(s.name.toLowerCase()));
+        if (matched) {
+          soundAndHaptics.playSuccessChime();
+          routineExecutor.executeActionsJson(matched.actionsJson);
+          return `Uruchomiono zarejestrowany skill: „${matched.name}”. Rozpoczynam odtwarzanie kroków.`;
+        }
+        return `Nie znaleziono skilla o nazwie „${targetName}”. Dostępne skille to: ${allSkills.map((s) => s.name).join(', ') || 'brak'}.`;
       }
       case 'SET_BRIGHTNESS': {
         const val = parseInt(
