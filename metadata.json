@@ -1,0 +1,6 @@
+{
+  "name": "CogniAgent v2",
+  "description": "Advanced non-rooted local voice and text assistant with hybrid local NLU and cloud LLM",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
