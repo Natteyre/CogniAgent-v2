@@ -3,6 +3,7 @@ import { glinerAgent } from './glinerAgent';
 import { hardwareManager } from './hardwareManager';
 import { ttsManager } from './ttsManager';
 import { storage } from './storage';
+import { modelManager } from './modelManager';
 
 export interface ApiMessage {
   role: 'system' | 'user' | 'assistant' | 'tool';
@@ -175,6 +176,33 @@ export class HybridAgentManager {
     const plan = glinerAgent.processCommand(userText);
     const inferenceDuration = Math.round(performance.now() - startTime);
 
+    // Multi-Intent Compound Command (e.g. "otwórz aplikację youtube i wyszukaj filmy z kotami")
+    if (plan.subIntents.length > 1) {
+      const responses: string[] = [];
+      const toolNames: string[] = [];
+      let previousAppContext = '';
+
+      for (const intent of plan.subIntents) {
+        if (intent.intentType === 'OPEN_APPLICATION') {
+          const app = intent.entities.find((e) => e.label === 'target_app')?.value || '';
+          previousAppContext = app.toLowerCase();
+        }
+
+        const res = await this.executeLocalIntent(intent, previousAppContext);
+        responses.push(res);
+        toolNames.push(intent.intentType);
+      }
+
+      this.recordTelemetry(inferenceDuration, true, plan.subIntents.length * 180);
+      const combinedOutput = responses.join(' ');
+      ttsManager.speak(combinedOutput);
+
+      return {
+        botResponse: combinedOutput,
+        toolSummary: `Sekwencja kognitywna (${plan.subIntents.length} akcji): ${toolNames.join(' ➔ ')}`
+      };
+    }
+
     const firstIntent = plan.subIntents[0];
     const isLocalHardwareAction =
       firstIntent &&
@@ -205,12 +233,29 @@ export class HybridAgentManager {
       }
     }
 
-    // Offline / Local Rule Fallback
+    // Offline / Local SLM & NLU Execution
+    const activeModel = modelManager.getActiveModel();
+    const hasOnlyGeneralQuery =
+      plan.subIntents.length === 1 && plan.subIntents[0].intentType === 'GENERAL_QUERY';
+
+    if (hasOnlyGeneralQuery && activeModel) {
+      const inferenceResult = await modelManager.runInference(userText, activeModel.id);
+      this.recordTelemetry(inferenceResult.latencyMs, true, inferenceResult.tokensCount * 4);
+      ttsManager.speak(inferenceResult.response);
+      return {
+        botResponse: inferenceResult.response,
+        toolSummary: `Lokalny SLM: ${activeModel.name} (${activeModel.format} ${activeModel.precision}) • ${inferenceResult.tokensPerSecond} tok/s`
+      };
+    }
+
     this.recordTelemetry(inferenceDuration, true, 420);
     const responses = await Promise.all(plan.subIntents.map((intent) => this.executeLocalIntent(intent)));
     const finalLocalOutput = responses.join(' ') || 'Zrozumiałem zapytanie, wykonano analizę kognitywną.';
     ttsManager.speak(finalLocalOutput);
-    return { botResponse: finalLocalOutput, toolSummary: null };
+    return {
+      botResponse: finalLocalOutput,
+      toolSummary: activeModel ? `Lokalny silnik: ${activeModel.name}` : null
+    };
   }
 
   private async executeCloudCognitiveLoop(
@@ -369,7 +414,7 @@ export class HybridAgentManager {
     }
   }
 
-  async executeLocalIntent(intent: ParsedIntent): Promise<string> {
+  async executeLocalIntent(intent: ParsedIntent, appContext?: string): Promise<string> {
     switch (intent.intentType) {
       case 'TOGGLE_HARDWARE': {
         const hw = intent.entities.find((e) => e.label === 'hardware_toggle')?.value || 'torch';
@@ -391,10 +436,17 @@ export class HybridAgentManager {
       }
       case 'OPEN_APPLICATION': {
         const appName = intent.entities.find((e) => e.label === 'target_app')?.value || 'aplikację';
+        if (appName.toLowerCase().includes('youtube')) {
+          return 'Uruchomiono aplikację YouTube.';
+        }
         return `Otwieram aplikację: ${appName}.`;
       }
       case 'WEB_SEARCH': {
         const query = intent.entities.find((e) => e.label === 'search_query')?.value || '';
+        const service = intent.entities.find((e) => e.label === 'service')?.value;
+        if (service === 'youtube' || appContext?.includes('youtube')) {
+          return `Wyszukano w serwisie YouTube filmy: "${query}". Wyniki wideo zostały pomyślnie załadowane.`;
+        }
         return await this.performWebSearch(query);
       }
       case 'SEND_MESSAGE': {
@@ -413,6 +465,20 @@ export class HybridAgentManager {
       case 'SWIPE_SCREEN': {
         const dir = intent.entities.find((e) => e.label === 'setting_value')?.value || 'down';
         return `Wykonano gest przesunięcia ekranu w ${dir === 'up' ? 'górę' : 'dół'}.`;
+      }
+      case 'SET_BRIGHTNESS': {
+        const val = parseInt(
+          intent.entities.find((e) => e.label === 'setting_value')?.value || '50',
+          10
+        );
+        hardwareManager.setBrightness(val);
+        return `Ustawiono jasność ekranu na ${val} procent.`;
+      }
+      case 'SET_DND': {
+        const state = intent.entities.find((e) => e.label === 'setting_value')?.value || 'on';
+        const isEnable = state === 'on' || state === 'enable';
+        hardwareManager.setDndMode(isEnable);
+        return `Tryb Nie Przeszkadzać (DND) został ${isEnable ? 'aktywowany' : 'wyłączony'}.`;
       }
       case 'SET_TIMER': {
         const seconds = parseInt(

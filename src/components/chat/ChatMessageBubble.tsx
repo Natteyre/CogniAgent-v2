@@ -5,19 +5,22 @@ import { ChatMessage } from '../../types';
 interface ChatMessageBubbleProps {
   message: ChatMessage;
   onSpeakMessage?: (text: string) => void;
+  isSpeakingThis?: boolean;
 }
 
 export const ChatMessageBubble: React.FC<ChatMessageBubbleProps> = ({
   message,
-  onSpeakMessage
+  onSpeakMessage,
+  isSpeakingThis = false
 }) => {
   const [copied, setCopied] = useState(false);
   const isUser = message.isUser;
 
-  const handleCopy = () => {
+  const handleCopy = (e: React.MouseEvent) => {
+    e.stopPropagation();
     navigator.clipboard.writeText(message.text);
     setCopied(true);
-    setTimeout(() => setCopied(false), 1500);
+    setTimeout(() => setCopied(false), 2000);
   };
 
   const formattedTime = new Date(message.timestamp).toLocaleTimeString([], {
@@ -31,19 +34,29 @@ export const ChatMessageBubble: React.FC<ChatMessageBubbleProps> = ({
       data-testid={isUser ? 'user_message_bubble' : 'agent_message_bubble'}
     >
       <div
-        className={`max-w-[85%] sm:max-w-md rounded-2xl px-4 py-3 shadow-md transition-all ${
+        className={`max-w-[88%] sm:max-w-md rounded-2xl px-4 py-3 shadow-md transition-all relative ${
           isUser
             ? 'bg-[#1e293b] text-[#f1f5f9] border border-[#00e5ff]/30 rounded-br-sm'
+            : message.isError
+            ? 'bg-red-950/40 text-red-200 border border-red-500/40 rounded-bl-sm'
             : 'bg-[#121824] text-[#f1f5f9] border border-[#2d3748] rounded-bl-sm'
         }`}
       >
         {/* CogniAgent Title Header */}
         {!isUser && (
-          <div className="flex items-center gap-1.5 mb-1.5">
-            <div className="w-4 h-4 rounded-full bg-[#00e5ff]/20 flex items-center justify-center">
-              <Brain className="w-3 h-3 text-[#00e5ff]" />
+          <div className="flex items-center justify-between gap-1.5 mb-1.5">
+            <div className="flex items-center gap-1.5">
+              <div className="w-4 h-4 rounded-full bg-[#00e5ff]/20 flex items-center justify-center">
+                <Brain className="w-3 h-3 text-[#00e5ff]" />
+              </div>
+              <span className="text-xs font-bold text-[#00e5ff] tracking-wide">CogniAgent</span>
             </div>
-            <span className="text-xs font-bold text-[#00e5ff] tracking-wide">CogniAgent</span>
+
+            {copied && (
+              <span className="text-[10px] font-semibold text-[#10b981] animate-fadeIn bg-[#10b981]/15 px-1.5 py-0.5 rounded">
+                Skopiowano!
+              </span>
+            )}
           </div>
         )}
 
@@ -65,21 +78,30 @@ export const ChatMessageBubble: React.FC<ChatMessageBubbleProps> = ({
         {/* Footer with actions and time */}
         <div className="flex items-center justify-between mt-2 pt-1 border-t border-white/5 text-[11px] text-[#94a3b8]">
           {!isUser ? (
-            <div className="flex items-center gap-1">
+            <div className="flex items-center gap-1.5">
               <button
                 type="button"
                 onClick={handleCopy}
-                title="Kopiuj tekst"
-                className="p-1 rounded hover:bg-white/10 text-[#00e5ff] transition-colors"
+                title="Kopiuj tekst do schowka"
+                className={`p-1.5 rounded-md transition-colors flex items-center gap-1 ${
+                  copied
+                    ? 'bg-[#10b981]/20 text-[#10b981]'
+                    : 'text-[#00e5ff] hover:bg-white/10'
+                }`}
               >
-                {copied ? <Check className="w-3.5 h-3.5 text-[#10b981]" /> : <Copy className="w-3.5 h-3.5" />}
+                {copied ? <Check className="w-3.5 h-3.5" /> : <Copy className="w-3.5 h-3.5" />}
               </button>
+
               {onSpeakMessage && (
                 <button
                   type="button"
                   onClick={() => onSpeakMessage(message.text)}
-                  title="Odsłuchaj ponownie"
-                  className="p-1 rounded hover:bg-white/10 text-[#8b5cf6] transition-colors"
+                  title="Odsłuchaj ponownie (TTS)"
+                  className={`p-1.5 rounded-md transition-colors ${
+                    isSpeakingThis
+                      ? 'bg-[#8b5cf6]/30 text-[#8b5cf6] animate-pulse'
+                      : 'text-[#8b5cf6] hover:bg-white/10'
+                  }`}
                 >
                   <Volume2 className="w-3.5 h-3.5" />
                 </button>

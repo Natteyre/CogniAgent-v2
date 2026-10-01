@@ -135,6 +135,23 @@ export class RoutineExecutor {
           await this.delay(400);
           break;
         }
+
+        case 'SET_BRIGHTNESS': {
+          const b = parseInt(action.parameter1, 10) || 50;
+          hardwareManager.setBrightness(b);
+          ttsManager.speak(`Ustawiono jasność ekranu na ${b} procent.`);
+          await this.delay(300);
+          break;
+        }
+
+        case 'SET_DND': {
+          const state = (action.parameter1 || 'on').toLowerCase();
+          const isEnable = state === 'on' || state === 'true' || state === '1' || state === 'włącz';
+          hardwareManager.setDndMode(isEnable);
+          ttsManager.speak(`Tryb Nie Przeszkadzać został ${isEnable ? 'aktywowany' : 'wyłączony'}.`);
+          await this.delay(300);
+          break;
+        }
       }
     }
   }

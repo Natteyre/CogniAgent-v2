@@ -15,11 +15,6 @@ export class GlinerAgent {
     return this.isModelLoaded;
   }
 
-  /**
-   * Advanced Multi-Intent Orchestrator:
-   * Splits complex compound commands containing Polish coordinators ("i", "oraz", "następnie", "potem")
-   * into independent sub-clauses, evaluating each sequentially.
-   */
   processCommand(userText: string): MultiIntentPlan {
     const trimmed = userText.trim();
     if (!trimmed) {
@@ -91,8 +86,74 @@ export class GlinerAgent {
       return { originalText: normalized, intentType: 'GET_SYSTEM_METRICS', entities, confidence: 0.99 };
     }
 
-    // 4. App Launch: "otwórz [aplikację]", "uruchom [aplikację]"
-    const openAppMatch = /^(otwórz|uruchom|włącz|wlacz|start)\s+(?:aplikację|aplikacje|program)?\s*(.+)$/i.exec(
+    // 4. Do Not Disturb (DND) / Tryb Nie Przeszkadzać
+    if (
+      lower.includes('nie przeszkadz') ||
+      lower.includes('dnd') ||
+      lower.includes('tryb cichy') ||
+      lower.includes('wycisz powiadomienia')
+    ) {
+      const isOff = lower.includes('wyłącz') || lower.includes('wylacz') || lower.includes('odcisz');
+      const isOn = !isOff;
+      entities.push({ label: 'action', value: isOn ? 'enable' : 'disable' });
+      entities.push({ label: 'setting_value', value: isOn ? 'on' : 'off' });
+      return { originalText: normalized, intentType: 'SET_DND', entities, confidence: 0.96 };
+    }
+
+    // 5. Brightness / Jasność ekranu
+    if (lower.includes('jasnoś') || lower.includes('jasnos') || lower.includes('ściemnij') || lower.includes('sciemnij') || lower.includes('rozjaśnij') || lower.includes('rozjasnij')) {
+      let percent = 50;
+      const numMatch = /\d+/.exec(lower);
+      if (numMatch) {
+        percent = parseInt(numMatch[0], 10);
+      } else if (lower.includes('ściemnij') || lower.includes('zmniejsz') || lower.includes('sciemnij')) {
+        percent = 25;
+      } else if (lower.includes('rozjaśnij') || lower.includes('maks') || lower.includes('zwiększ')) {
+        percent = 100;
+      }
+      entities.push({ label: 'action', value: 'set_brightness' });
+      entities.push({ label: 'setting_value', value: percent.toString() });
+      return { originalText: normalized, intentType: 'SET_BRIGHTNESS', entities, confidence: 0.95 };
+    }
+
+    // 6. Timer: "ustaw minutnik na X minut/sekund"
+    if (lower.includes('minutnik') || lower.includes('stoper') || lower.includes('odliczaj')) {
+      const digitsMatch = /\d+/.exec(lower);
+      let seconds = 300;
+      if (digitsMatch) {
+        const val = parseInt(digitsMatch[0], 10);
+        if (lower.includes('sekund')) {
+          seconds = val;
+        } else {
+          seconds = val * 60;
+        }
+      }
+      entities.push({ label: 'action', value: 'set_timer' });
+      entities.push({ label: 'setting_value', value: seconds.toString() });
+      return { originalText: normalized, intentType: 'SET_TIMER', entities, confidence: 0.96 };
+    }
+
+    // 7. Alarm: "ustaw budzik na 7:30"
+    if (lower.includes('budzik') || lower.includes('alarm')) {
+      const timeMatch = /\b(\d{1,2})[:.](\d{2})\b/.exec(lower);
+      const timeStr = timeMatch ? `${timeMatch[1]}:${timeMatch[2]}` : '07:00';
+      entities.push({ label: 'action', value: 'set_alarm' });
+      entities.push({ label: 'setting_value', value: timeStr });
+      return { originalText: normalized, intentType: 'SET_ALARM', entities, confidence: 0.96 };
+    }
+
+    // 8. Volume: "głośność na 50%", "wycisz"
+    if (lower.includes('głośnoś') || lower.includes('glosnos') || lower.includes('wycisz') || lower.includes('podgłoś') || lower.includes('scisz')) {
+      const vol = lower.includes('wycisz')
+        ? 0
+        : parseInt(/\d+/.exec(lower)?.[0] || '50', 10);
+      entities.push({ label: 'action', value: 'set_volume' });
+      entities.push({ label: 'setting_value', value: vol.toString() });
+      return { originalText: normalized, intentType: 'SET_VOLUME', entities, confidence: 0.97 };
+    }
+
+    // 9. App Launch: "otwórz [aplikację]", "otówrz [aplikację]", "uruchom [aplikację]"
+    const openAppMatch = /^(otwórz|otówrz|otowrz|uruchom|odpal|włącz|wlacz|start)\s+(?:aplikację|aplikacje|program)?\s*(.+)$/i.exec(
       normalized
     );
     if (openAppMatch && openAppMatch[2]) {
@@ -102,18 +163,21 @@ export class GlinerAgent {
       return { originalText: normalized, intentType: 'OPEN_APPLICATION', entities, confidence: 0.95 };
     }
 
-    // 5. Web Search: "szukaj [zapytanie]", "wyszukaj [zapytanie]"
-    const searchMatch = /^(szukaj|wyszukaj|znajdź|znajdz|sprawdź|sprawdz)\s+(?:w\s+internecie|w\s+google)?\s*(.+)$/i.exec(
+    // 10. Web / Media Search: "wyszukaj [filmy z kotami]", "szukaj [zapytanie]"
+    const searchMatch = /^(szukaj|wyszukaj|znajdź|znajdz|odtwórz|odtworz|puść|pusc|sprawdź|sprawdz)\s+(?:w\s+internecie|w\s+google|w\s+youtube|na\s+youtube)?\s*(.+)$/i.exec(
       normalized
     );
     if (searchMatch && searchMatch[2]) {
       const query = searchMatch[2].trim();
       entities.push({ label: 'action', value: 'web_search' });
       entities.push({ label: 'search_query', value: query });
+      if (lower.includes('youtube') || lower.includes('film') || lower.includes('wideo') || lower.includes('video')) {
+        entities.push({ label: 'service', value: 'youtube' });
+      }
       return { originalText: normalized, intentType: 'WEB_SEARCH', entities, confidence: 0.94 };
     }
 
-    // 6. Messaging: "wyślij wiadomość do [kontakt] [treść]"
+    // 11. Messaging: "wyślij wiadomość do [kontakt] [treść]"
     const msgMatch = /(?:wyślij|wyslij|napisz)\s+(?:wiadomość|sms)?\s*do\s+([\p{L}\d\s]+?)(?:\s+o\s+treści|\s+ze\s+słowami|:)?\s*(.+)?$/iu.exec(
       normalized
     );
@@ -128,7 +192,7 @@ export class GlinerAgent {
       return { originalText: normalized, intentType: 'SEND_MESSAGE', entities, confidence: 0.92 };
     }
 
-    // 7. Click UI Node: "kliknij [tekst]", "naciśnij [tekst]"
+    // 12. Click UI Node: "kliknij [tekst]", "naciśnij [tekst]"
     const clickMatch = /^(kliknij|naciśnij|nacisnij|stuknij|wybierz)\s+(?:w\s+)?(?:przycisk|pole|element)?\s*(.+)$/i.exec(
       normalized
     );
@@ -139,7 +203,7 @@ export class GlinerAgent {
       return { originalText: normalized, intentType: 'CLICK_NODE', entities, confidence: 0.91 };
     }
 
-    // 8. Screen Inspection & Summary
+    // 13. Screen Inspection & Summary
     if (
       lower.includes('na ekranie') ||
       lower.includes('podsumuj ekran') ||
@@ -150,7 +214,7 @@ export class GlinerAgent {
       return { originalText: normalized, intentType: 'SUMMARIZE_SCREEN', entities, confidence: 0.96 };
     }
 
-    // 9. Swipe gestures: "przewiń w dół", "przesuń w górę"
+    // 14. Swipe gestures: "przewiń w dół", "przesuń w górę"
     if (
       lower.includes('przewiń') ||
       lower.includes('przesuń') ||
@@ -164,36 +228,7 @@ export class GlinerAgent {
       return { originalText: normalized, intentType: 'SWIPE_SCREEN', entities, confidence: 0.95 };
     }
 
-    // 10. Timer: "ustaw minutnik na X minut"
-    if (lower.includes('minutnik') || lower.includes('stoper')) {
-      const digitsMatch = /\d+/.exec(lower);
-      const digits = digitsMatch ? parseInt(digitsMatch[0], 10) : 5;
-      const seconds = digits * 60;
-      entities.push({ label: 'action', value: 'set_timer' });
-      entities.push({ label: 'setting_value', value: seconds.toString() });
-      return { originalText: normalized, intentType: 'SET_TIMER', entities, confidence: 0.95 };
-    }
-
-    // 11. Alarm: "ustaw budzik na 7:30"
-    if (lower.includes('budzik') || lower.includes('alarm')) {
-      const timeMatch = /\b(\d{1,2})[:.](\d{2})\b/.exec(lower);
-      const timeStr = timeMatch ? `${timeMatch[1]}:${timeMatch[2]}` : '07:00';
-      entities.push({ label: 'action', value: 'set_alarm' });
-      entities.push({ label: 'setting_value', value: timeStr });
-      return { originalText: normalized, intentType: 'SET_ALARM', entities, confidence: 0.95 };
-    }
-
-    // 12. Volume: "głośność na 50%", "wycisz"
-    if (lower.includes('głośnoś') || lower.includes('glosnos') || lower.includes('wycisz')) {
-      const vol = lower.includes('wycisz')
-        ? 0
-        : parseInt(/\d+/.exec(lower)?.[0] || '50', 10);
-      entities.push({ label: 'action', value: 'set_volume' });
-      entities.push({ label: 'setting_value', value: vol.toString() });
-      return { originalText: normalized, intentType: 'SET_VOLUME', entities, confidence: 0.97 };
-    }
-
-    // 13. General query
+    // 15. General query
     entities.push({ label: 'action', value: 'general_query' });
     entities.push({ label: 'search_query', value: normalized });
     return { originalText: normalized, intentType: 'GENERAL_QUERY', entities, confidence: 0.85 };

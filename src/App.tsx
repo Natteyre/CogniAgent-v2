@@ -21,6 +21,8 @@ import { RoutinesScreen } from './components/routines/RoutinesScreen';
 import { SettingsScreen } from './components/settings/SettingsScreen';
 import { BottomNavBar } from './components/navigation/BottomNavBar';
 import { FloatingAssistantWidget } from './components/overlay/FloatingAssistantWidget';
+import { modelManager } from './services/modelManager';
+import { ModelManagerModal } from './components/models/ModelManagerModal';
 
 export const App: React.FC = () => {
   const [selectedTab, setSelectedTab] = useState<number>(0);
@@ -44,12 +46,22 @@ export const App: React.FC = () => {
   );
   const [wakeWordActive, setWakeWordActive] = useState<boolean>(false);
   const [isFloatingActive, setIsFloatingActive] = useState<boolean>(false);
+  const [isModelModalOpen, setIsModelModalOpen] = useState<boolean>(false);
+  const [activeModelName, setActiveModelName] = useState<string>(() =>
+    modelManager.getActiveModel()?.name || 'Kirin 980 NLU'
+  );
 
   const wakeWordActiveRef = useRef(wakeWordActive);
   wakeWordActiveRef.current = wakeWordActive;
 
   // Subscriptions & Initializations
   useEffect(() => {
+    // Model Manager Subscription
+    const unsubModels = modelManager.subscribeModelList(() => {
+      const active = modelManager.getActiveModel();
+      if (active) setActiveModelName(active.name);
+    });
+
     // Hardware State Subscription
     const unsubHw = hardwareManager.subscribe((state) => {
       setHardwareState(state);
@@ -87,6 +99,7 @@ export const App: React.FC = () => {
     });
 
     return () => {
+      unsubModels();
       unsubHw();
       unsubTriggers();
       unsubSpeaking();
@@ -441,6 +454,7 @@ export const App: React.FC = () => {
             isSpeaking={isSpeaking}
             wakeWordActive={wakeWordActive}
             rmsLevel={rmsLevel}
+            activeModelName={activeModelName}
             onSendMessage={handleSendMessage}
             onStartVoice={handleStartVoice}
             onStopVoice={handleStopVoice}
@@ -449,6 +463,7 @@ export const App: React.FC = () => {
             onToggleTorch={handleToggleTorch}
             onClearChat={handleClearChat}
             onSpeakMessage={handleSpeakMessage}
+            onOpenModelManager={() => setIsModelModalOpen(true)}
           />
         )}
 
@@ -504,6 +519,21 @@ export const App: React.FC = () => {
 
       {/* Bottom Navigation Bar */}
       <BottomNavBar selectedTab={selectedTab} onSelectTab={setSelectedTab} />
+
+      {/* Screen Brightness Dimming Overlay */}
+      {hardwareState.brightnessPercent < 100 && (
+        <div
+          style={{ opacity: (100 - hardwareState.brightnessPercent) / 125 }}
+          className="fixed inset-0 bg-black pointer-events-none z-[100] transition-opacity duration-300"
+        />
+      )}
+
+      {/* Model Manager Modal (HuggingFace Hub / Local Device / Playground) */}
+      <ModelManagerModal
+        isOpen={isModelModalOpen}
+        onClose={() => setIsModelModalOpen(false)}
+        onModelChanged={(model) => setActiveModelName(model.name)}
+      />
     </div>
   );
 };

@@ -9,7 +9,9 @@ export type ActionType =
   | 'SUMMARIZE_SCREEN'
   | 'SET_TIMER'
   | 'SET_ALARM'
-  | 'SET_VOLUME';
+  | 'SET_VOLUME'
+  | 'SET_BRIGHTNESS'
+  | 'SET_DND';
 
 export interface RoutineAction {
   type: ActionType;
@@ -95,6 +97,21 @@ export interface LlmSettings {
   voiceLanguage: string;
 }
 
+export interface ActiveTimer {
+  id: string;
+  label: string;
+  totalSeconds: number;
+  remainingSeconds: number;
+  createdAt: number;
+}
+
+export interface HuaweiOptimizationState {
+  autostartEnabled: boolean;
+  batteryOptimizationIgnored: boolean;
+  powerGenieGuarded: boolean;
+  lockScreenKeepAlive: boolean;
+}
+
 export interface HardwareState {
   batteryPercent: number;
   isCharging: boolean;
@@ -102,6 +119,10 @@ export interface HardwareState {
   isBluetoothEnabled: boolean;
   isAccessibilityActive: boolean;
   isNotificationListenerActive: boolean;
+  brightnessPercent: number;
+  isDndActive: boolean;
+  activeTimers: ActiveTimer[];
+  huaweiOptimization: HuaweiOptimizationState;
 }
 
 export type DownloadState =
@@ -115,3 +136,35 @@ export type DownloadState =
     }
   | { status: 'completed'; message: string }
   | { status: 'error'; errorMessage: string };
+
+export type ModelFormat = 'ONNX' | 'MediaPipe' | 'GGUF' | 'TFLite';
+export type ModelPrecision = 'INT4' | 'INT8' | 'FP16' | 'FP32';
+
+export interface OfflineModelInfo {
+  id: string;
+  name: string;
+  architecture: string;
+  format: ModelFormat;
+  precision: ModelPrecision;
+  sizeMB: number;
+  author: string;
+  huggingFaceRepo?: string;
+  downloadUrl?: string;
+  isInstalled: boolean;
+  installedAt?: number;
+  isCustomImport?: boolean;
+  fileName?: string;
+  contextWindow: number;
+  description: string;
+  recommendedHardware: string;
+}
+
+export interface ModelDownloadProgress {
+  modelId: string;
+  progressPercent: number;
+  downloadedMB: number;
+  totalMB: number;
+  speedMBs: number;
+  status: 'idle' | 'downloading' | 'completed' | 'error' | 'cancelled';
+  errorMessage?: string;
+}

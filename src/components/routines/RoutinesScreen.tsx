@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useRef } from 'react';
 import {
   Plus,
   Play,
@@ -9,9 +9,15 @@ import {
   ArrowRight,
   Download,
   Upload,
-  Check
+  Copy,
+  Check,
+  FileCode,
+  Sparkles,
+  Sliders,
+  Sun,
+  BellOff
 } from 'lucide-react';
-import { SkillEntity, RoutineTriggerEntity, ActionType, RoutineAction } from '../../types';
+import { SkillEntity, RoutineTriggerEntity, ActionType, RoutineAction, RoutinesBackup } from '../../types';
 
 interface RoutinesScreenProps {
   skills: SkillEntity[];
@@ -26,18 +32,20 @@ interface RoutinesScreenProps {
   onImportJson?: (json: string) => void;
 }
 
-const ACTION_TYPES: ActionType[] = [
-  'SPEAK',
-  'OPEN_APP',
-  'DELAY',
-  'CLICK_NODE',
-  'TOGGLE_HARDWARE',
-  'SWIPE_SCREEN',
-  'TAP_COORDINATE',
-  'SUMMARIZE_SCREEN',
-  'SET_TIMER',
-  'SET_ALARM',
-  'SET_VOLUME'
+const ACTION_TYPES: { type: ActionType; label: string; placeholder: string }[] = [
+  { type: 'SPEAK', label: 'Wypowiedź (TTS)', placeholder: 'Tekst do wypowiedzenia w języku polskim' },
+  { type: 'OPEN_APP', label: 'Uruchomienie aplikacji', placeholder: 'Nazwa aplikacji (np. YouTube, Aparat)' },
+  { type: 'DELAY', label: 'Opóźnienie (Pauza)', placeholder: 'Czas w milisekundach (np. 1500)' },
+  { type: 'SET_TIMER', label: 'Ustaw minutnik', placeholder: 'Czas w sekundach (np. 300 = 5 minut)' },
+  { type: 'SET_ALARM', label: 'Ustaw budzik', placeholder: 'Godzina budzika (np. 07:00)' },
+  { type: 'SET_VOLUME', label: 'Głośność multimediów', placeholder: 'Poziom w procentach 0-100 (np. 60)' },
+  { type: 'SET_BRIGHTNESS', label: 'Jasność ekranu', placeholder: 'Poziom jasności 10-100 (np. 40)' },
+  { type: 'SET_DND', label: 'Tryb Nie Przeszkadzać (DND)', placeholder: 'Wartość: on lub off' },
+  { type: 'TOGGLE_HARDWARE', label: 'Przełącznik sprzętowy', placeholder: 'torch lub bluetooth' },
+  { type: 'CLICK_NODE', label: 'Kliknięcie przycisku UI', placeholder: 'Tekst przycisku do kliknięcia' },
+  { type: 'SWIPE_SCREEN', label: 'Przewinięcie ekranu', placeholder: 'Kierunek: up, down, left, right' },
+  { type: 'TAP_COORDINATE', label: 'Kliknięcie w punkcie X,Y', placeholder: 'Współrzędne (np. 300, 500)' },
+  { type: 'SUMMARIZE_SCREEN', label: 'Podsumowanie ekranu', placeholder: 'Odczyt bieżącego ekranu' }
 ];
 
 export const RoutinesScreen: React.FC<RoutinesScreenProps> = ({
@@ -48,13 +56,12 @@ export const RoutinesScreen: React.FC<RoutinesScreenProps> = ({
   onDeleteSkill,
   onSaveTrigger,
   onToggleTrigger,
-  onDeleteTrigger,
-  onExportJson,
-  onImportJson
+  onDeleteTrigger
 }) => {
   const [selectedTab, setSelectedTab] = useState<0 | 1>(0);
   const [showCreateSkillModal, setShowCreateSkillModal] = useState(false);
   const [showCreateTriggerModal, setShowCreateTriggerModal] = useState(false);
+  const [showBackupModal, setShowBackupModal] = useState(false);
   const [executingSkillId, setExecutingSkillId] = useState<number | null>(null);
 
   // New Skill Form State
@@ -67,6 +74,12 @@ export const RoutinesScreen: React.FC<RoutinesScreenProps> = ({
   // New Trigger Form State
   const [newTriggerType, setNewTriggerType] = useState('ACTION_POWER_CONNECTED');
   const [newTriggerSkill, setNewTriggerSkill] = useState(skills[0]?.name || '');
+
+  // Backup State
+  const [jsonText, setJsonText] = useState('');
+  const [copySuccess, setCopySuccess] = useState(false);
+  const [importFeedback, setImportFeedback] = useState<string | null>(null);
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
 
   const handleSaveSkill = () => {
     if (newSkillName.trim() && newActions.length > 0) {
@@ -101,16 +114,119 @@ export const RoutinesScreen: React.FC<RoutinesScreenProps> = ({
     }
   };
 
+  // Generate JSON string
+  const generateBackupJson = () => {
+    const backup: RoutinesBackup = {
+      version: 2,
+      exportedAt: Date.now(),
+      skills: skills.map((s) => ({
+        name: s.name,
+        actionsJson: s.actionsJson
+      })),
+      triggers: triggers.map((t) => ({
+        triggerType: t.triggerType,
+        skillName: t.associatedSkillName,
+        enabled: t.enabled
+      }))
+    };
+    return JSON.stringify(backup, null, 2);
+  };
+
+  const handleOpenBackupModal = () => {
+    setJsonText(generateBackupJson());
+    setImportFeedback(null);
+    setShowBackupModal(true);
+  };
+
+  const handleDownloadFile = () => {
+    const str = generateBackupJson();
+    const blob = new Blob([str], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `cogniagent_backup_${new Date().toISOString().slice(0, 10)}.json`;
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
+  const handleCopyJson = () => {
+    navigator.clipboard.writeText(jsonText);
+    setCopySuccess(true);
+    setTimeout(() => setCopySuccess(false), 2000);
+  };
+
+  const handleFileUploaded = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      const content = event.target?.result as string;
+      if (content) {
+        setJsonText(content);
+        executeImportJson(content);
+      }
+    };
+    reader.readAsText(file);
+  };
+
+  const executeImportJson = (textToImport: string) => {
+    try {
+      const parsed = JSON.parse(textToImport);
+      let countSkills = 0;
+      let countTriggers = 0;
+
+      if (parsed.skills && Array.isArray(parsed.skills)) {
+        parsed.skills.forEach((s: any) => {
+          if (s.name && s.actionsJson) {
+            try {
+              const acts = JSON.parse(s.actionsJson);
+              onSaveSkill(s.name, acts);
+              countSkills++;
+            } catch {
+              // Ignore
+            }
+          }
+        });
+      }
+
+      if (parsed.triggers && Array.isArray(parsed.triggers)) {
+        parsed.triggers.forEach((t: any) => {
+          if (t.triggerType && t.skillName) {
+            onSaveTrigger(t.triggerType, t.skillName);
+            countTriggers++;
+          }
+        });
+      }
+
+      setImportFeedback(`✓ Sukces! Zaimportowano ${countSkills} umiejętności oraz ${countTriggers} wyzwalaczy.`);
+    } catch (e: any) {
+      setImportFeedback(`✗ Błąd importu JSON: ${e.message}`);
+    }
+  };
+
   return (
     <div className="flex flex-col h-full bg-[#0a0e14] overflow-y-auto">
       {/* Header */}
       <header className="bg-[#121824] border-b border-[#2d3748] px-4 py-3 shrink-0 shadow-md">
-        <h1 className="text-base sm:text-lg font-bold text-white tracking-wide">
-          Kreator Makr i Umiejętności
-        </h1>
-        <p className="text-xs text-[#94a3b8]">
-          Automatyzacja procesów Kirin 980 i wyzwalacze zdarzeń
-        </p>
+        <div className="flex items-center justify-between">
+          <div>
+            <h1 className="text-base sm:text-lg font-bold text-white tracking-wide">
+              Kreator Makr i Umiejętności
+            </h1>
+            <p className="text-xs text-[#94a3b8]">
+              Automatyzacja procesów Kirin 980 i wyzwalacze zdarzeń
+            </p>
+          </div>
+
+          <button
+            type="button"
+            onClick={handleOpenBackupModal}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-[#1e2638] hover:bg-[#2d3748] text-xs font-semibold text-[#00e5ff] border border-[#00e5ff]/30 shadow-sm transition-all"
+          >
+            <FileCode className="w-4 h-4" />
+            <span>Kopia JSON</span>
+          </button>
+        </div>
 
         {/* Tab Switcher */}
         <div className="flex mt-3 border-b border-[#2d3748]">
@@ -237,7 +353,7 @@ export const RoutinesScreen: React.FC<RoutinesScreenProps> = ({
                 {triggers.map((trigger) => {
                   const triggerLabel =
                     trigger.triggerType === 'ACTION_POWER_CONNECTED'
-                      ? 'Podłączenie ładowarki (Zasilanie)'
+                      ? 'Podłączenie ładowarki (Power Connected)'
                       : trigger.triggerType === 'ACTION_POWER_DISCONNECTED'
                       ? 'Odłączenie ładowarki'
                       : trigger.triggerType;
@@ -291,7 +407,7 @@ export const RoutinesScreen: React.FC<RoutinesScreenProps> = ({
         )}
       </div>
 
-      {/* Modal: Create Skill */}
+      {/* Modal: Create Skill with Extended Action Types */}
       {showCreateSkillModal && (
         <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
           <div className="bg-[#121824] border border-[#2d3748] rounded-2xl w-full max-w-lg p-5 shadow-2xl space-y-4 max-h-[90vh] flex flex-col">
@@ -307,7 +423,7 @@ export const RoutinesScreen: React.FC<RoutinesScreenProps> = ({
                   value={newSkillName}
                   onChange={(e) => setNewSkillName(e.target.value)}
                   data-testid="skill_name_input"
-                  placeholder="np. Tryb Kinowy"
+                  placeholder="np. Tryb Kinowy / Poranny Rozruch"
                   className="w-full bg-[#0a0e14] border border-[#2d3748] focus:border-[#00e5ff] rounded-xl px-3 py-2 text-sm text-white outline-none"
                 />
               </div>
@@ -318,90 +434,83 @@ export const RoutinesScreen: React.FC<RoutinesScreenProps> = ({
                 </label>
 
                 <div className="space-y-2">
-                  {newActions.map((action, idx) => (
-                    <div
-                      key={idx}
-                      className="bg-[#1a2233] border border-[#2d3748] rounded-xl p-3 space-y-2"
-                    >
-                      <div className="flex items-center justify-between">
-                        <span className="text-xs font-bold text-[#00e5ff]">
-                          Krok {idx + 1}: {action.type}
-                        </span>
-                        <button
-                          type="button"
-                          onClick={() => {
-                            const updated = [...newActions];
-                            updated.splice(idx, 1);
-                            setNewActions(updated);
-                          }}
-                          className="text-gray-400 hover:text-red-400 p-1"
-                        >
-                          <Trash2 className="w-3.5 h-3.5" />
-                        </button>
-                      </div>
+                  {newActions.map((action, idx) => {
+                    const actionInfo = ACTION_TYPES.find((a) => a.type === action.type) || ACTION_TYPES[0];
 
-                      {/* Action Type Dropdown */}
-                      <select
-                        value={action.type}
-                        onChange={(e) => {
-                          const updated = [...newActions];
-                          updated[idx] = { ...action, type: e.target.value as ActionType };
-                          setNewActions(updated);
-                        }}
-                        className="w-full bg-[#0a0e14] border border-[#2d3748] rounded-lg px-2.5 py-1.5 text-xs text-white outline-none"
+                    return (
+                      <div
+                        key={idx}
+                        className="bg-[#1a2233] border border-[#2d3748] rounded-xl p-3 space-y-2"
                       >
-                        {ACTION_TYPES.map((type) => (
-                          <option key={type} value={type}>
-                            {type}
-                          </option>
-                        ))}
-                      </select>
+                        <div className="flex items-center justify-between">
+                          <span className="text-xs font-bold text-[#00e5ff]">
+                            Krok {idx + 1}: {actionInfo.label}
+                          </span>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              const updated = [...newActions];
+                              updated.splice(idx, 1);
+                              setNewActions(updated);
+                            }}
+                            className="text-gray-400 hover:text-red-400 p-1"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </button>
+                        </div>
 
-                      {/* Parameter 1 */}
-                      <input
-                        type="text"
-                        value={action.parameter1}
-                        onChange={(e) => {
-                          const updated = [...newActions];
-                          updated[idx] = { ...action, parameter1: e.target.value };
-                          setNewActions(updated);
-                        }}
-                        placeholder={
-                          action.type === 'SPEAK'
-                            ? 'Tekst do wypowiedzenia'
-                            : action.type === 'DELAY'
-                            ? 'Czas opóźnienia w ms (np. 1500)'
-                            : action.type === 'TOGGLE_HARDWARE'
-                            ? 'torch lub bluetooth'
-                            : action.type === 'SET_VOLUME'
-                            ? 'Głośność w % (0-100)'
-                            : action.type === 'SET_TIMER'
-                            ? 'Czas w sekundach (np. 300)'
-                            : 'Parametr akcji'
-                        }
-                        className="w-full bg-[#0a0e14] border border-[#2d3748] rounded-lg px-2.5 py-1.5 text-xs text-white outline-none"
-                      />
-
-                      {/* Parameter 2 if hardware or alarm/timer */}
-                      {(action.type === 'TOGGLE_HARDWARE' ||
-                        action.type === 'SET_TIMER' ||
-                        action.type === 'SET_ALARM') && (
-                        <input
-                          type="text"
-                          value={action.parameter2 || ''}
+                        {/* Action Type Dropdown */}
+                        <select
+                          value={action.type}
                           onChange={(e) => {
                             const updated = [...newActions];
-                            updated[idx] = { ...action, parameter2: e.target.value };
+                            const t = e.target.value as ActionType;
+                            updated[idx] = { ...action, type: t };
                             setNewActions(updated);
                           }}
-                          placeholder={
-                            action.type === 'TOGGLE_HARDWARE' ? 'on lub off' : 'Etykieta / Nazwa'
-                          }
+                          className="w-full bg-[#0a0e14] border border-[#2d3748] rounded-lg px-2.5 py-1.5 text-xs text-white outline-none"
+                        >
+                          {ACTION_TYPES.map(({ type, label }) => (
+                            <option key={type} value={type}>
+                              {label} ({type})
+                            </option>
+                          ))}
+                        </select>
+
+                        {/* Parameter 1 */}
+                        <input
+                          type="text"
+                          value={action.parameter1}
+                          onChange={(e) => {
+                            const updated = [...newActions];
+                            updated[idx] = { ...action, parameter1: e.target.value };
+                            setNewActions(updated);
+                          }}
+                          placeholder={actionInfo.placeholder}
                           className="w-full bg-[#0a0e14] border border-[#2d3748] rounded-lg px-2.5 py-1.5 text-xs text-white outline-none"
                         />
-                      )}
-                    </div>
-                  ))}
+
+                        {/* Parameter 2 if hardware or alarm/timer */}
+                        {(action.type === 'TOGGLE_HARDWARE' ||
+                          action.type === 'SET_TIMER' ||
+                          action.type === 'SET_ALARM') && (
+                          <input
+                            type="text"
+                            value={action.parameter2 || ''}
+                            onChange={(e) => {
+                              const updated = [...newActions];
+                              updated[idx] = { ...action, parameter2: e.target.value };
+                              setNewActions(updated);
+                            }}
+                            placeholder={
+                              action.type === 'TOGGLE_HARDWARE' ? 'on lub off' : 'Etykieta / Nazwa'
+                            }
+                            className="w-full bg-[#0a0e14] border border-[#2d3748] rounded-lg px-2.5 py-1.5 text-xs text-white outline-none"
+                          />
+                        )}
+                      </div>
+                    );
+                  })}
                 </div>
 
                 <button
@@ -511,6 +620,108 @@ export const RoutinesScreen: React.FC<RoutinesScreenProps> = ({
               >
                 Zapisz Powiązanie
               </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal: Full Backup / Restore JSON Manager */}
+      {showBackupModal && (
+        <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-[#121824] border border-[#2d3748] rounded-2xl w-full max-w-lg p-5 shadow-2xl space-y-4 max-h-[90vh] flex flex-col">
+            <div className="flex items-center justify-between">
+              <h2 className="text-base font-bold text-white flex items-center gap-2">
+                <FileCode className="w-5 h-5 text-[#00e5ff]" />
+                <span>Kopia Zapasowa Rutyn (JSON Backup)</span>
+              </h2>
+              <button
+                type="button"
+                onClick={() => setShowBackupModal(false)}
+                className="text-gray-400 hover:text-white"
+              >
+                ✕
+              </button>
+            </div>
+
+            <p className="text-xs text-gray-300">
+              Pobierz plik z definicjami makr, skopiuj JSON do schowka lub załaduj kopię zapasową z dysku.
+            </p>
+
+            {/* Quick Actions Row */}
+            <div className="flex flex-wrap gap-2">
+              <button
+                type="button"
+                onClick={handleDownloadFile}
+                className="px-3 py-1.5 rounded-xl bg-[#00e5ff] text-black text-xs font-bold hover:bg-[#00b4d8] flex items-center gap-1.5 shadow-sm"
+              >
+                <Download className="w-3.5 h-3.5" />
+                <span>Pobierz plik .json</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={handleCopyJson}
+                className="px-3 py-1.5 rounded-xl bg-[#1e2638] hover:bg-[#2d3748] text-xs font-semibold text-white flex items-center gap-1.5 border border-white/10"
+              >
+                {copySuccess ? <Check className="w-3.5 h-3.5 text-[#10b981]" /> : <Copy className="w-3.5 h-3.5 text-[#00e5ff]" />}
+                <span>{copySuccess ? 'Skopiowano!' : 'Kopiuj do schowka'}</span>
+              </button>
+
+              <label className="px-3 py-1.5 rounded-xl bg-[#8b5cf6] text-white text-xs font-bold hover:bg-[#7c3aed] flex items-center gap-1.5 shadow-sm cursor-pointer">
+                <Upload className="w-3.5 h-3.5" />
+                <span>Wczytaj plik .json</span>
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  accept=".json,application/json"
+                  onChange={handleFileUploaded}
+                  className="hidden"
+                />
+              </label>
+            </div>
+
+            {/* JSON Textarea Editor */}
+            <div className="flex-1 flex flex-col min-h-[160px]">
+              <textarea
+                rows={8}
+                value={jsonText}
+                onChange={(e) => setJsonText(e.target.value)}
+                placeholder='{"skills": [...], "triggers": [...]}'
+                className="w-full flex-1 bg-[#0a0e14] border border-[#2d3748] rounded-xl p-3 text-xs font-mono text-[#00e5ff] outline-none focus:border-[#00e5ff] resize-none"
+              />
+            </div>
+
+            {importFeedback && (
+              <div
+                className={`p-2 rounded-xl text-xs font-semibold ${
+                  importFeedback.startsWith('✓')
+                    ? 'bg-[#10b981]/20 border border-[#10b981]/40 text-[#10b981]'
+                    : 'bg-red-950/40 border border-red-500/40 text-red-300'
+                }`}
+              >
+                {importFeedback}
+              </div>
+            )}
+
+            <div className="flex items-center justify-between pt-2 border-t border-[#2d3748]">
+              <span className="text-[11px] text-gray-500">Wersja formatu: v2</span>
+              <div className="flex gap-2">
+                <button
+                  type="button"
+                  onClick={() => setShowBackupModal(false)}
+                  className="px-4 py-2 text-xs text-gray-400 hover:text-white"
+                >
+                  Zamknij
+                </button>
+                <button
+                  type="button"
+                  onClick={() => executeImportJson(jsonText)}
+                  disabled={!jsonText.trim()}
+                  className="px-4 py-2 bg-gradient-to-r from-[#00e5ff] to-[#8b5cf6] text-black font-bold text-xs rounded-xl shadow-md hover:opacity-95 disabled:opacity-50"
+                >
+                  Zaimportuj ten JSON
+                </button>
+              </div>
             </div>
           </div>
         </div>
