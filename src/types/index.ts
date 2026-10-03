@@ -27,6 +27,9 @@ export interface ChatMessage {
   sessionId?: string;
   toolInvocation?: string | null;
   isError?: boolean;
+  attachedImage?: string;
+  attachedFileName?: string;
+  attachedFileSize?: string;
 }
 
 export interface ChatSession {
@@ -142,6 +145,8 @@ export interface KirinTelemetry {
   bigCoresActive: number;
 }
 
+export type DeviceTelemetry = KirinTelemetry;
+
 export interface LlmSettings {
   apiKey: string;
   endpointUrl: string;
@@ -174,6 +179,8 @@ export interface DeviceProfile {
   npuAcceleration: HardwareAccelerationBackend;
   batteryOptimizationSystemName: string;
   notes: string;
+  isAutoDetected?: boolean;
+  detectedHardwareInfo?: string;
 }
 
 export interface AgentServicesConfig {

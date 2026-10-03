@@ -5,21 +5,54 @@ const STORAGE_KEYS = {
   ACTIVE_MODEL_ID: 'cogni_active_offline_model'
 };
 
+export interface SystemNluEngineInfo {
+  id: string;
+  name: string;
+  architecture: string;
+  format: string;
+  precision: string;
+  sizeMB: number;
+  latencyMs: number;
+  status: 'ACTIVE_PERMANENT';
+  description: string;
+  capabilities: string[];
+}
+
+export const SYSTEM_NLU_ENGINE: SystemNluEngineInfo = {
+  id: 'gliner-polish-nlu',
+  name: 'GLiNER Polish Multi-Intent Router',
+  architecture: 'Bi-Encoder NLU (Encoder-only)',
+  format: 'ONNX Runtime Edge',
+  precision: 'INT8',
+  sizeMB: 38.4,
+  latencyMs: 14,
+  status: 'ACTIVE_PERMANENT',
+  description: 'Dedykowany silnik decyzyjny NPU pracujący na stałe w pamięci urządzenia. Błyskawicznie (14 ms) rozpoznaje intencje, steruje sprzętem, zarządza makrami, czyta ekran i wykonuje polecenia systemowe.',
+  capabilities: [
+    'Sterowanie sprzętem (Latarka, Bluetooth, DND, Głośność)',
+    'Ekstrakcja encji i parametrów czasowych',
+    'Nawigacja i obsługa aplikacji systemowych',
+    'Wyzwalanie makr i rutyn automatyzacji',
+    'OCR dokumentów i rozpoznawanie błędu na ekranie'
+  ]
+};
+
 const DEFAULT_MODELS: OfflineModelInfo[] = [
   {
-    id: 'gemma-2b-it-onnx',
-    name: 'Gemma 2B Instruct (MediaPipe / ONNX)',
-    architecture: 'Gemma 2B',
-    format: 'MediaPipe',
+    id: 'qwen2.5-1.5b-onnx',
+    name: 'Qwen 2.5 1.5B Instruct (ONNX Mobile)',
+    architecture: 'Qwen 2.5',
+    format: 'ONNX',
     precision: 'INT4',
-    sizeMB: 1340,
-    author: 'Google DeepMind',
-    huggingFaceRepo: 'google/gemma-2b-it',
-    downloadUrl: 'https://huggingface.co/google/gemma-2b-it/resolve/main/gemma-2b-it-gpu-int4.bin',
-    isInstalled: false,
-    contextWindow: 2048,
-    description: 'Oficjalny model Google Gemma 2B zoptymalizowany pod format MediaPipe GenAI (.task / .bin) oraz silnik ONNX Runtime na procesory mobilne.',
-    recommendedHardware: 'Kirin 980 / 4GB+ RAM / NPU'
+    sizeMB: 980,
+    author: 'Alibaba Cloud / Qwen',
+    huggingFaceRepo: 'Qwen/Qwen2.5-1.5B-Instruct',
+    downloadUrl: 'https://huggingface.co/onnx-community/Qwen2.5-1.5B-Instruct/resolve/main/onnx/model_int4.onnx',
+    isInstalled: true,
+    installedAt: Date.now() - 3600000,
+    contextWindow: 8192,
+    description: 'Najwyżej oceniany model generatywny sub-2B na świecie. Wybitna polszczyzna, płynny czat, streszczenia i rozumowanie logiczne w 100% offline.',
+    recommendedHardware: 'Kirin 980 / 4GB RAM'
   },
   {
     id: 'gemma-2-2b-it',
@@ -28,12 +61,12 @@ const DEFAULT_MODELS: OfflineModelInfo[] = [
     format: 'MediaPipe',
     precision: 'INT4',
     sizeMB: 1420,
-    author: 'Google',
+    author: 'Google DeepMind',
     huggingFaceRepo: 'google/gemma-2-2b-it',
     downloadUrl: 'https://huggingface.co/google/gemma-2-2b-it/resolve/main/gemma2-2b-it-gpu-int4.task',
     isInstalled: false,
     contextWindow: 4096,
-    description: 'Najnowsza generacja Gemma 2 o rewolucyjnej jakości odpowiedzi w kategorii modeli poniżej 3 miliardów parametrów.',
+    description: 'Najnowsza generacja Google Gemma 2 o rewolucyjnej jakości odpowiedzi w kategorii modeli poniżej 3 miliardów parametrów.',
     recommendedHardware: 'Kirin 980 / 4GB+ RAM / WebGPU'
   },
   {
@@ -126,28 +159,12 @@ const DEFAULT_MODELS: OfflineModelInfo[] = [
     contextWindow: 4096,
     description: 'Jeden z najlepszych modeli sub-1B parametrów o doskonałym rozumieniu języka naturalnego i poleceń.',
     recommendedHardware: 'Kirin 980 / WebGPU'
-  },
-  {
-    id: 'gliner-polish-nlu',
-    name: 'GLiNER Polish Multi-Intent (Kirin 980)',
-    architecture: 'GLiNER NLU',
-    format: 'ONNX',
-    precision: 'INT8',
-    sizeMB: 38.4,
-    author: 'CogniAgent Team',
-    huggingFaceRepo: 'urchade/gliner_base-v2.1',
-    downloadUrl: 'https://huggingface.co/urchade/gliner_base-v2.1/resolve/main/gliner_static.onnx',
-    isInstalled: true,
-    installedAt: Date.now() - 172800000,
-    contextWindow: 512,
-    description: 'Wysokowydajny silnik ekstrakcji intencji i encji zoptymalizowany dla 4 dużych rdzeni Cortex-A76 Kirina 980.',
-    recommendedHardware: 'Kirin 980 NPU / CPU'
   }
 ];
 
 class ModelManager {
   private models: OfflineModelInfo[] = [];
-  private activeModelId: string = 'smollm2-360m-onnx';
+  private activeModelId: string = 'qwen2.5-1.5b-onnx';
   private downloadListeners: Set<(progress: ModelDownloadProgress) => void> = new Set();
   private modelListListeners: Set<(models: OfflineModelInfo[]) => void> = new Set();
   private activeDownloadIntervals: Map<string, any> = new Map();
@@ -156,23 +173,36 @@ class ModelManager {
     this.loadState();
   }
 
+  getSystemNluEngine(): SystemNluEngineInfo {
+    return SYSTEM_NLU_ENGINE;
+  }
+
   private loadState() {
     try {
       const saved = localStorage.getItem(STORAGE_KEYS.MODELS_REGISTRY);
       if (saved) {
-        this.models = JSON.parse(saved);
+        const parsed: OfflineModelInfo[] = JSON.parse(saved);
+        // Exclude GLiNER from conversational model list (it's now permanent System NLU)
+        let filtered = parsed.filter((m) => m.id !== 'gliner-polish-nlu');
+        // Ensure Qwen 2.5 1.5B is present
+        if (!filtered.some((m) => m.id === 'qwen2.5-1.5b-onnx')) {
+          filtered = [DEFAULT_MODELS[0], ...filtered];
+        }
+        this.models = filtered;
       } else {
         this.models = [...DEFAULT_MODELS];
         this.saveModels();
       }
 
       const active = localStorage.getItem(STORAGE_KEYS.ACTIVE_MODEL_ID);
-      if (active && this.models.some((m) => m.id === active && m.isInstalled)) {
+      if (active && active !== 'gliner-polish-nlu' && this.models.some((m) => m.id === active && m.isInstalled)) {
         this.activeModelId = active;
       } else {
         const firstInstalled = this.models.find((m) => m.isInstalled);
         if (firstInstalled) {
           this.activeModelId = firstInstalled.id;
+        } else {
+          this.activeModelId = 'qwen2.5-1.5b-onnx';
         }
       }
     } catch {

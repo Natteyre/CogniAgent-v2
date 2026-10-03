@@ -6,7 +6,6 @@ import {
   HardwareState,
   LlmSettings,
   KirinTelemetry,
-  DownloadState,
   RoutineAction,
   RoutinesBackup
 } from './types';
@@ -26,6 +25,11 @@ import { ModelManagerModal } from './components/models/ModelManagerModal';
 import { sessionManager } from './services/sessionManager';
 import { soundAndHaptics } from './services/soundAndHaptics';
 import { ActionAuthorizationModal } from './components/security/ActionAuthorizationModal';
+import { HandsFreeCarMode } from './components/handsfree/HandsFreeCarMode';
+import { KnowledgeBaseModal } from './components/rag/KnowledgeBaseModal';
+import { AndroidLauncherSimulator } from './components/simulator/AndroidLauncherSimulator';
+import { AndroidAssistantModal } from './components/settings/AndroidAssistantModal';
+import { LiveCameraVisionModal } from './components/vision/LiveCameraVisionModal';
 
 export const App: React.FC = () => {
   const [selectedTab, setSelectedTab] = useState<number>(0);
@@ -49,13 +53,15 @@ export const App: React.FC = () => {
   const [rmsLevel, setRmsLevel] = useState<number>(0);
   const [availableVoices, setAvailableVoices] = useState<string[]>([]);
   const [testConnectionStatus, setTestConnectionStatus] = useState<string | null>(null);
-  const [downloadState, setDownloadState] = useState<DownloadState>({ status: 'idle' });
-  const [isNluModelInstalled, setIsNluModelInstalled] = useState<boolean>(() =>
-    storage.isNluModelInstalled()
-  );
   const [wakeWordActive, setWakeWordActive] = useState<boolean>(false);
+  const [isStrictOffline, setIsStrictOffline] = useState<boolean>(() => storage.getStrictOfflineMode());
   const [isFloatingActive, setIsFloatingActive] = useState<boolean>(false);
   const [isModelModalOpen, setIsModelModalOpen] = useState<boolean>(false);
+  const [isHandsFreeOpen, setIsHandsFreeOpen] = useState<boolean>(false);
+  const [isKnowledgeBaseOpen, setIsKnowledgeBaseOpen] = useState<boolean>(false);
+  const [isLauncherSimulatorOpen, setIsLauncherSimulatorOpen] = useState<boolean>(false);
+  const [isAssistantModalOpen, setIsAssistantModalOpen] = useState<boolean>(false);
+  const [isLiveCameraOpen, setIsLiveCameraOpen] = useState<boolean>(false);
   const [activeModelName, setActiveModelName] = useState<string>(() =>
     modelManager.getActiveModel()?.name || 'Kirin 980 NLU'
   );
@@ -149,15 +155,23 @@ export const App: React.FC = () => {
 
   // Send Message implementation
   const handleSendMessage = useCallback(
-    async (userText: string) => {
+    async (
+      userText: string,
+      attachment?: { image?: string; fileName?: string; fileSize?: string }
+    ) => {
       const trimmed = userText.trim();
-      if (!trimmed || isProcessing) return;
+      if ((!trimmed && !attachment) || isProcessing) return;
+
+      const effectiveText = trimmed || (attachment ? `[Przeanalizuj załącznik: ${attachment.fileName || 'plik'}]` : '');
 
       const userMsg: ChatMessage = {
         id: Date.now(),
-        text: trimmed,
+        text: effectiveText,
         isUser: true,
-        timestamp: Date.now()
+        timestamp: Date.now(),
+        attachedImage: attachment?.image,
+        attachedFileName: attachment?.fileName,
+        attachedFileSize: attachment?.fileSize
       };
 
       setMessages((prev) => [...prev, userMsg]);
@@ -171,12 +185,14 @@ export const App: React.FC = () => {
 
         let toolSummaryReport: string | null = null;
         const { botResponse, toolSummary } = await hybridAgentManager.processUserMessage(
-          trimmed,
+          effectiveText,
           llmSettings,
           history,
           (report) => {
             toolSummaryReport = report;
-          }
+          },
+          attachment,
+          isStrictOffline
         );
 
         const botMsg: ChatMessage = {
@@ -210,17 +226,26 @@ export const App: React.FC = () => {
 
   // Voice Input Handlers
   const handleStartVoice = () => {
-    speechRecognizerHelper.startListening(
-      (transcript) => {
-        handleSendMessage(transcript);
+    if (isListening) {
+      handleStopVoice();
+      return;
+    }
+    soundAndHaptics.playListeningStartChime();
+    speechRecognizerHelper.startListening({
+      continuous: false,
+      onFinalResult: (transcript) => {
+        if (transcript.trim()) {
+          handleSendMessage(transcript.trim());
+        }
       },
-      (error) => {
+      onError: (error) => {
         console.warn('Voice input error:', error);
       }
-    );
+    });
   };
 
   const handleStopVoice = () => {
+    soundAndHaptics.playListeningPauseChime();
     speechRecognizerHelper.stopListening();
     setWakeWordActive(false);
   };
@@ -229,8 +254,11 @@ export const App: React.FC = () => {
   const startWakeWordLoop = useCallback(() => {
     if (!wakeWordActiveRef.current) return;
 
-    speechRecognizerHelper.startListening(
-      (transcript) => {
+    speechRecognizerHelper.startListening({
+      continuous: true,
+      onFinalResult: (transcript) => {
+        if (!transcript.trim()) return;
+
         const lower = transcript.toLowerCase();
         let cleaned = transcript;
         if (
@@ -249,31 +277,32 @@ export const App: React.FC = () => {
         if (cleaned) {
           handleSendMessage(cleaned);
         } else {
-          ttsManager.speak('Tak, słucham Cię.');
-        }
-
-        if (wakeWordActiveRef.current) {
-          setTimeout(startWakeWordLoop, 1200);
+          soundAndHaptics.playWakeWordChime();
         }
       },
-      () => {
-        if (wakeWordActiveRef.current) {
-          setTimeout(startWakeWordLoop, 1500);
-        }
+      onError: (err) => {
+        console.warn('Wake word error:', err);
       }
-    );
+    });
   }, [handleSendMessage]);
 
   const handleToggleWakeWord = () => {
     if (wakeWordActive) {
       setWakeWordActive(false);
       speechRecognizerHelper.stopListening();
-      ttsManager.speak('Tryb nasłuchu słowa kluczowego wyłączony.');
+      soundAndHaptics.playListeningPauseChime();
     } else {
       setWakeWordActive(true);
-      ttsManager.speak("Tryb nasłuchu aktywny. Powiedz 'Hej Cogni' lub dowolne polecenie.");
-      setTimeout(startWakeWordLoop, 500);
+      soundAndHaptics.playListeningStartChime();
+      startWakeWordLoop();
     }
+  };
+
+  const handleToggleStrictOffline = () => {
+    const next = !isStrictOffline;
+    setIsStrictOffline(next);
+    storage.setStrictOfflineMode(next);
+    soundAndHaptics.playSuccessChime();
   };
 
   // Screen summary
@@ -386,45 +415,6 @@ export const App: React.FC = () => {
     ttsManager.speak('Dzień dobry! CogniAgent v2 jest gotowy do działania.');
   };
 
-  // NLU Model Downloader Simulation
-  const handleDownloadModel = () => {
-    setDownloadState({
-      status: 'downloading',
-      currentFileName: 'gliner_static.onnx',
-      progressPercent: 0,
-      downloadedMB: 0,
-      totalMB: 38.4
-    });
-
-    let current = 0;
-    const interval = setInterval(() => {
-      current += 15;
-      if (current >= 100) {
-        clearInterval(interval);
-        setDownloadState({
-          status: 'completed',
-          message: 'Pobieranie zakończone! Model Kirin 980 NLU (38.4 MB) zainstalowany.'
-        });
-        setIsNluModelInstalled(true);
-        storage.setNluModelInstalled(true);
-      } else {
-        setDownloadState({
-          status: 'downloading',
-          currentFileName: 'gliner_static.onnx',
-          progressPercent: current,
-          downloadedMB: Number(((current / 100) * 38.4).toFixed(1)),
-          totalMB: 38.4
-        });
-      }
-    }, 250);
-  };
-
-  const handleDeleteModel = () => {
-    setIsNluModelInstalled(false);
-    storage.setNluModelInstalled(false);
-    setDownloadState({ status: 'idle' });
-  };
-
   // Export / Import Routines Backup JSON
   const handleExportRoutines = () => {
     const backup: RoutinesBackup = {
@@ -493,6 +483,8 @@ export const App: React.FC = () => {
             rmsLevel={rmsLevel}
             activeModelName={activeModelName}
             activeSessionTitle={activeSessionTitle}
+            isStrictOffline={isStrictOffline}
+            onToggleStrictOffline={handleToggleStrictOffline}
             onSwitchSession={handleSwitchSession}
             onSendMessage={handleSendMessage}
             onStartVoice={handleStartVoice}
@@ -503,6 +495,10 @@ export const App: React.FC = () => {
             onClearChat={handleClearChat}
             onSpeakMessage={handleSpeakMessage}
             onOpenModelManager={() => setIsModelModalOpen(true)}
+            onOpenHandsFree={() => setIsHandsFreeOpen(true)}
+            onOpenKnowledgeBase={() => setIsKnowledgeBaseOpen(true)}
+            onOpenLauncherSimulator={() => setIsLauncherSimulatorOpen(true)}
+            onOpenLiveCamera={() => setIsLiveCameraOpen(true)}
           />
         )}
 
@@ -526,9 +522,6 @@ export const App: React.FC = () => {
             testConnectionStatus={testConnectionStatus}
             availableVoices={availableVoices}
             telemetry={telemetry}
-            downloadState={downloadState}
-            isNluModelInstalled={isNluModelInstalled}
-            modelSizeMB={38.4}
             isFloatingActive={isFloatingActive}
             onUpdateSettings={handleUpdateSettings}
             onTestConnection={handleTestConnection}
@@ -536,8 +529,6 @@ export const App: React.FC = () => {
             onToggleTorch={handleToggleTorch}
             onToggleBluetooth={handleToggleBluetooth}
             onRefreshHardware={() => setHardwareState(hardwareManager.getState())}
-            onDownloadModel={handleDownloadModel}
-            onDeleteModel={handleDeleteModel}
             onToggleFloatingService={() => setIsFloatingActive(!isFloatingActive)}
             onToggleAccessibility={() => hardwareManager.toggleAccessibilityService()}
             onToggleNotifications={() => hardwareManager.toggleNotificationListener()}
@@ -572,6 +563,74 @@ export const App: React.FC = () => {
         isOpen={isModelModalOpen}
         onClose={() => setIsModelModalOpen(false)}
         onModelChanged={(model) => setActiveModelName(model.name)}
+      />
+
+      {/* Hands-Free Car & Walk Voice Mode */}
+      <HandsFreeCarMode
+        isOpen={isHandsFreeOpen}
+        onClose={() => setIsHandsFreeOpen(false)}
+        onSendMessage={handleSendMessage}
+        lastUserText={messages.filter((m) => m.isUser).slice(-1)[0]?.text}
+        lastBotReply={messages.filter((m) => !m.isUser).slice(-1)[0]?.text}
+        isProcessing={isProcessing}
+        isSpeaking={isSpeaking}
+        rmsLevel={rmsLevel}
+      />
+
+      {/* Local Knowledge Base (Personal Offline RAG) */}
+      <KnowledgeBaseModal
+        isOpen={isKnowledgeBaseOpen}
+        onClose={() => setIsKnowledgeBaseOpen(false)}
+        onAskQuestion={(question) => handleSendMessage(question)}
+      />
+
+      {/* Android Desktop Launcher Simulator (Floating Head Over Apps) */}
+      <AndroidLauncherSimulator
+        isOpen={isLauncherSimulatorOpen}
+        onClose={() => setIsLauncherSimulatorOpen(false)}
+        onSendMessage={handleSendMessage}
+        lastResponse={messages.filter((m) => !m.isUser).slice(-1)[0]?.text}
+        isProcessing={isProcessing}
+        isSpeaking={isSpeaking}
+        rmsLevel={rmsLevel}
+        onOpenHandsFree={() => setIsHandsFreeOpen(true)}
+        onOpenAssistantSetup={() => setIsAssistantModalOpen(true)}
+      />
+
+      {/* Android Default Assistant Setup & PiP Modal */}
+      <AndroidAssistantModal
+        isOpen={isAssistantModalOpen}
+        onClose={() => setIsAssistantModalOpen(false)}
+        onLaunchPipMode={() => {
+          setIsAssistantModalOpen(false);
+          setIsLauncherSimulatorOpen(true);
+        }}
+      />
+
+      {/* Real-Time Live Camera Vision (Gemini Live Vision) */}
+      <LiveCameraVisionModal
+        isOpen={isLiveCameraOpen}
+        onClose={() => setIsLiveCameraOpen(false)}
+        isProcessing={isProcessing}
+        isSpeaking={isSpeaking}
+        rmsLevel={rmsLevel}
+        onAnalyzeFrame={async (frameBase64, userQuery) => {
+          const res = await hybridAgentManager.processUserMessage(
+            userQuery,
+            llmSettings,
+            messages.map((m) => ({
+              role: m.isUser ? 'user' : 'assistant',
+              content: m.text
+            })),
+            undefined,
+            {
+              image: frameBase64,
+              fileName: 'live_camera_feed.jpg',
+              fileSize: '320 KB'
+            }
+          );
+          return res.botResponse;
+        }}
       />
 
       {/* Human-in-the-Loop Action Authorization Guardrail Modal */}

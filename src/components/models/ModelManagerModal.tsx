@@ -37,7 +37,7 @@ export const ModelManagerModal: React.FC<ModelManagerModalProps> = ({
   onModelChanged
 }) => {
   const [selectedTab, setSelectedTab] = useState<'catalog' | 'installed' | 'import' | 'playground'>('catalog');
-  const [catalogFilter, setCatalogFilter] = useState<'all' | 'gemma' | 'phi' | 'smollm' | 'light'>('all');
+  const [catalogFilter, setCatalogFilter] = useState<'all' | 'qwen' | 'gemma' | 'phi' | 'smollm' | 'light'>('all');
   const [models, setModels] = useState<OfflineModelInfo[]>(() => modelManager.getModels());
   const [activeModelId, setActiveModelId] = useState<string>(() => modelManager.getActiveModelId());
   const [downloads, setDownloads] = useState<Record<string, ModelDownloadProgress>>({});
@@ -206,6 +206,7 @@ export const ModelManagerModal: React.FC<ModelManagerModalProps> = ({
 
     if (!matchesSearch) return false;
 
+    if (catalogFilter === 'qwen') return m.architecture.toLowerCase().includes('qwen');
     if (catalogFilter === 'gemma') return m.architecture.toLowerCase().includes('gemma');
     if (catalogFilter === 'phi') return m.architecture.toLowerCase().includes('phi');
     if (catalogFilter === 'smollm') return m.architecture.toLowerCase().includes('smollm') || m.architecture.toLowerCase().includes('llama');
@@ -310,6 +311,59 @@ export const ModelManagerModal: React.FC<ModelManagerModalProps> = ({
 
         {/* Tab Content */}
         <div className="flex-1 overflow-y-auto p-4 space-y-4">
+          {/* Dual-Engine Architecture Tandem Status */}
+          <div className="bg-[#0a0e14] border border-[#2d3748] rounded-xl p-3 sm:p-3.5 space-y-2.5">
+            <div className="flex items-center justify-between flex-wrap gap-2">
+              <div className="flex items-center gap-2">
+                <span className="text-[11px] font-bold tracking-wider uppercase text-gray-400">
+                  Architektura Kaskadowa (Dual-Engine On-Device AI)
+                </span>
+                <span className="bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 text-[9px] font-extrabold px-1.5 py-0.5 rounded">
+                  TANDEM AKTYWNY
+                </span>
+              </div>
+              <div className="text-[11px] text-gray-400 font-mono">14 ms NPU Fast-Path + Generative SLM</div>
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs">
+              {/* Engine A: Permanent GLiNER Intent Router */}
+              <div className="bg-[#121824] border border-emerald-500/40 rounded-xl p-2.5 space-y-1 shadow-[0_0_10px_rgba(16,185,129,0.1)]">
+                <div className="flex items-center justify-between">
+                  <span className="text-[10px] font-extrabold text-emerald-400 flex items-center gap-1">
+                    <Zap className="w-3 h-3" />
+                    SILNIK A: ROUTER NPU (STAŁY)
+                  </span>
+                  <span className="bg-emerald-500/20 text-emerald-300 text-[9px] font-mono px-1.5 py-0.5 rounded font-bold">
+                    14 ms | 38.4 MB
+                  </span>
+                </div>
+                <div className="font-bold text-white text-xs">GLiNER Polish Multi-Intent Bi-Encoder</div>
+                <p className="text-[10px] text-gray-400 leading-tight">
+                  Aktywny na stałe w NPU/CPU. Błyskawicznie steruje sprzętem, latarką, makrami, powiadomieniami i OCR.
+                </p>
+              </div>
+
+              {/* Engine B: Generative Chat SLM */}
+              <div className="bg-[#121824] border border-[#8b5cf6]/40 rounded-xl p-2.5 space-y-1 shadow-[0_0_10px_rgba(139,92,246,0.1)]">
+                <div className="flex items-center justify-between">
+                  <span className="text-[10px] font-extrabold text-[#8b5cf6] flex items-center gap-1">
+                    <Sparkles className="w-3 h-3" />
+                    SILNIK B: CZAT & WIEDZA (SLM)
+                  </span>
+                  <span className="bg-[#8b5cf6]/20 text-[#8b5cf6] text-[9px] font-mono px-1.5 py-0.5 rounded font-bold">
+                    LOKALNY OFFLINE
+                  </span>
+                </div>
+                <div className="font-bold text-white text-xs truncate">
+                  {activeModel?.name || 'Qwen 2.5 1.5B Instruct'}
+                </div>
+                <p className="text-[10px] text-gray-400 leading-tight">
+                  Odpowiada na czacie i generuje odpowiedzi w trybie 100% Offline. Wybierz model poniżej.
+                </p>
+              </div>
+            </div>
+          </div>
+
           {/* TAB 1: Catalog */}
           {selectedTab === 'catalog' && (
             <div className="space-y-4">
@@ -321,7 +375,7 @@ export const ModelManagerModal: React.FC<ModelManagerModalProps> = ({
                     type="text"
                     value={searchQuery}
                     onChange={(e) => setSearchQuery(e.target.value)}
-                    placeholder="Szukaj modeli (Gemma, Phi, ONNX, MediaPipe)..."
+                    placeholder="Szukaj modeli (Qwen, Gemma, Phi, ONNX, MediaPipe)..."
                     className="w-full bg-[#0a0e14] border border-[#2d3748] focus:border-[#00e5ff] rounded-xl pl-9 pr-3 py-2 text-xs text-white outline-none"
                   />
                 </div>
@@ -351,6 +405,17 @@ export const ModelManagerModal: React.FC<ModelManagerModalProps> = ({
                 </button>
                 <button
                   type="button"
+                  onClick={() => setCatalogFilter('qwen')}
+                  className={`px-3 py-1 rounded-lg font-medium transition-colors ${
+                    catalogFilter === 'qwen'
+                      ? 'bg-[#00e5ff] text-black font-bold'
+                      : 'bg-[#151e2e] text-gray-400 hover:text-white'
+                  }`}
+                >
+                  Qwen 2.5 (Zalecany do PL)
+                </button>
+                <button
+                  type="button"
                   onClick={() => setCatalogFilter('gemma')}
                   className={`px-3 py-1 rounded-lg font-medium transition-colors ${
                     catalogFilter === 'gemma'
@@ -358,7 +423,7 @@ export const ModelManagerModal: React.FC<ModelManagerModalProps> = ({
                       : 'bg-[#151e2e] text-gray-400 hover:text-white'
                   }`}
                 >
-                  Google Gemma 2B (MediaPipe)
+                  Google Gemma 2 (MediaPipe)
                 </button>
                 <button
                   type="button"

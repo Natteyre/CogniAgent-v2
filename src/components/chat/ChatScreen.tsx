@@ -4,9 +4,10 @@ import {
   Mic,
   MicOff,
   Send,
-  Wrench,
-  Flashlight,
-  BatteryCharging,
+  Plus,
+  Image,
+  FileText,
+  PlayCircle,
   Trash2,
   Radio,
   Eye,
@@ -19,7 +20,13 @@ import {
   Bell,
   Layers,
   Sparkles,
-  ChevronDown
+  ChevronDown,
+  Lock,
+  Globe,
+  Car,
+  BookOpen,
+  Smartphone,
+  Camera
 } from 'lucide-react';
 import { ChatMessage, HardwareState } from '../../types';
 import { ChatMessageBubble } from './ChatMessageBubble';
@@ -41,8 +48,10 @@ interface ChatScreenProps {
   rmsLevel: number;
   activeModelName?: string;
   activeSessionTitle?: string;
+  isStrictOffline?: boolean;
+  onToggleStrictOffline?: () => void;
   onSwitchSession?: (sessionId: string) => void;
-  onSendMessage: (text: string) => void;
+  onSendMessage: (text: string, attachment?: { image?: string; fileName?: string; fileSize?: string }) => void;
   onStartVoice: () => void;
   onStopVoice: () => void;
   onToggleWakeWord: () => void;
@@ -51,6 +60,10 @@ interface ChatScreenProps {
   onClearChat: () => void;
   onSpeakMessage: (text: string) => void;
   onOpenModelManager?: () => void;
+  onOpenHandsFree?: () => void;
+  onOpenKnowledgeBase?: () => void;
+  onOpenLauncherSimulator?: () => void;
+  onOpenLiveCamera?: () => void;
 }
 
 export const ChatScreen: React.FC<ChatScreenProps> = ({
@@ -63,6 +76,8 @@ export const ChatScreen: React.FC<ChatScreenProps> = ({
   rmsLevel,
   activeModelName,
   activeSessionTitle,
+  isStrictOffline = false,
+  onToggleStrictOffline,
   onSwitchSession,
   onSendMessage,
   onStartVoice,
@@ -72,7 +87,11 @@ export const ChatScreen: React.FC<ChatScreenProps> = ({
   onToggleTorch,
   onClearChat,
   onSpeakMessage,
-  onOpenModelManager
+  onOpenModelManager,
+  onOpenHandsFree,
+  onOpenKnowledgeBase,
+  onOpenLauncherSimulator,
+  onOpenLiveCamera
 }) => {
   const [inputText, setInputText] = useState('');
   const [showToolsMenu, setShowToolsMenu] = useState(false);
@@ -82,6 +101,19 @@ export const ChatScreen: React.FC<ChatScreenProps> = ({
   const [isScreenModalOpen, setIsScreenModalOpen] = useState(false);
   const [unreadNotifCount, setUnreadNotifCount] = useState<number>(0);
   const messagesEndRef = useRef<HTMLDivElement | null>(null);
+
+  // Attachment state for multimodal images / files
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const cameraInputRef = useRef<HTMLInputElement>(null);
+  const galleryInputRef = useRef<HTMLInputElement>(null);
+  const docInputRef = useRef<HTMLInputElement>(null);
+  const [pendingAttachment, setPendingAttachment] = useState<{
+    file: File;
+    previewUrl?: string;
+    fileName: string;
+    fileSize: string;
+    isImage: boolean;
+  } | null>(null);
 
   useEffect(() => {
     const unsub = notificationManager.subscribe((_, unread) => {
@@ -98,11 +130,55 @@ export const ChatScreen: React.FC<ChatScreenProps> = ({
     scrollToBottom();
   }, [messages, isProcessing]);
 
-  const handleSend = () => {
-    if (inputText.trim() && !isProcessing) {
-      onSendMessage(inputText.trim());
-      setInputText('');
+  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    const isImage = file.type.startsWith('image/');
+    const sizeKB = (file.size / 1024).toFixed(1);
+    const sizeMB = (file.size / (1024 * 1024)).toFixed(1);
+    const sizeStr = file.size > 1024 * 1024 ? `${sizeMB} MB` : `${sizeKB} KB`;
+
+    if (isImage) {
+      const reader = new FileReader();
+      reader.onload = (loadEvent) => {
+        setPendingAttachment({
+          file,
+          previewUrl: loadEvent.target?.result as string,
+          fileName: file.name,
+          fileSize: sizeStr,
+          isImage: true
+        });
+      };
+      reader.readAsDataURL(file);
+    } else {
+      setPendingAttachment({
+        file,
+        fileName: file.name,
+        fileSize: sizeStr,
+        isImage: false
+      });
     }
+
+    e.target.value = '';
+  };
+
+  const handleSend = () => {
+    const textToSend = inputText.trim();
+    if ((!textToSend && !pendingAttachment) || isProcessing) return;
+
+    if (pendingAttachment) {
+      onSendMessage(textToSend, {
+        image: pendingAttachment.previewUrl,
+        fileName: pendingAttachment.fileName,
+        fileSize: pendingAttachment.fileSize
+      });
+      setPendingAttachment(null);
+    } else {
+      onSendMessage(textToSend);
+    }
+
+    setInputText('');
   };
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
@@ -112,13 +188,12 @@ export const ChatScreen: React.FC<ChatScreenProps> = ({
   };
 
   const quickPrompts = [
-    { label: 'Ustaw minutnik 5 min', command: 'ustaw minutnik na 5 minut' },
-    { label: 'Włącz latarkę', command: 'włącz latarkę' },
-    { label: 'Tryb Nie Przeszkadzać', command: 'włącz tryb nie przeszkadzać' },
-    { label: 'Stan baterii', command: 'sprawdź poziom baterii' },
-    { label: 'Jasność 50%', command: 'ustaw jasność na 50%' },
-    { label: 'Otwórz YouTube', command: 'otwórz YouTube' },
-    { label: 'Przewiń w dół', command: 'przewiń w dół' }
+    { label: 'Co jest na ekranie?', command: 'Co jest na ekranie?' },
+    { label: 'Podsumuj powiadomienia', command: 'podsumuj powiadomienia' },
+    { label: 'Przeszukaj umowę (RAG)', command: 'Co w mojej umowie pisze o okresie wypowiedzenia?' },
+    { label: 'Nagraj rutynę / makro', command: 'nagraj nową rutynę' },
+    { label: 'Odczytaj paragon (OCR)', command: 'Odczytaj pozycje z paragonu' },
+    { label: 'Zapamiętaj fakt o mnie', command: 'Zapamiętaj fakt o moich preferencjach' }
   ];
 
   const formatSeconds = (sec: number) => {
@@ -130,57 +205,118 @@ export const ChatScreen: React.FC<ChatScreenProps> = ({
   return (
     <div className="flex flex-col h-full bg-[#0a0e14]">
       {/* Top Header Bar */}
-      <header className="bg-[#121824] border-b border-[#2d3748] px-4 py-3 shrink-0 shadow-md">
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <div className="w-9 h-9 rounded-full bg-[#00e5ff]/15 flex items-center justify-center border border-[#00e5ff]/30 shadow-[0_0_10px_rgba(0,229,255,0.2)]">
-              <Brain className="w-5 h-5 text-[#00e5ff]" />
+      <header className="bg-[#121824] border-b border-[#2d3748] px-3 sm:px-4 py-2 sm:py-2.5 shrink-0 shadow-md">
+        <div className="flex items-center justify-between gap-2">
+          {/* Left Brand & Tandem Status */}
+          <div className="flex items-center gap-2 sm:gap-2.5 min-w-0">
+            <div className="w-8 h-8 rounded-full bg-[#00e5ff]/15 flex items-center justify-center border border-[#00e5ff]/30 shadow-[0_0_10px_rgba(0,229,255,0.2)] shrink-0">
+              <Brain className="w-4 h-4 text-[#00e5ff]" />
             </div>
-            <div>
-              <div className="flex items-center gap-2 flex-wrap">
-                <h1 className="text-base font-bold text-white tracking-wide">CogniAgent v2</h1>
+
+            <div className="min-w-0 flex flex-col justify-center">
+              <div className="flex items-center gap-1.5 flex-wrap">
+                <div className="flex items-center gap-1 shrink-0">
+                  <span className="text-xs sm:text-sm font-extrabold text-white tracking-tight whitespace-nowrap">
+                    CogniAgent
+                  </span>
+                  <span className="text-[9px] font-mono text-[#00e5ff] bg-[#00e5ff]/15 px-1 py-0.2 rounded font-bold">
+                    v2
+                  </span>
+                </div>
+
+                {/* Model Tandem Pill */}
                 <button
                   type="button"
                   onClick={onOpenModelManager}
-                  title="Kliknij, aby otworzyć Menedżer Modeli Offline (Gemma 2B / Phi-3 / ONNX)"
-                  className="bg-[#8b5cf6]/20 hover:bg-[#8b5cf6]/35 border border-[#8b5cf6]/35 hover:border-[#8b5cf6]/60 text-[#8b5cf6] hover:text-white text-[10px] font-semibold px-2 py-0.5 rounded flex items-center gap-1 transition-all cursor-pointer"
+                  title="Kliknij, aby otworzyć Menedżer Modeli (Router GLiNER NPU + Lokalny SLM Czat)"
+                  className="bg-[#8b5cf6]/20 hover:bg-[#8b5cf6]/35 border border-[#8b5cf6]/35 text-[#8b5cf6] text-[10px] font-semibold px-2 py-0.5 rounded flex items-center gap-1 transition-all cursor-pointer whitespace-nowrap shrink-0"
                 >
-                  <Cpu className="w-3 h-3 text-[#00e5ff]" />
-                  <span>{activeModelName || 'Kirin 980 NLU'}</span>
+                  <Cpu className="w-2.5 h-2.5 text-[#00e5ff] shrink-0" />
+                  <span>GLiNER+{activeModelName ? activeModelName.split(' ')[0] : 'Qwen'}</span>
                 </button>
+
+                {/* 100% Offline / Hybrid Air-Gap Toggle */}
+                {onToggleStrictOffline && (
+                  <button
+                    type="button"
+                    onClick={onToggleStrictOffline}
+                    data-testid="offline_mode_toggle"
+                    title={
+                      isStrictOffline
+                        ? 'Tryb 100% Offline (Air-Gap) aktywny. Kliknij, aby przejść w tryb hybrydowy.'
+                        : 'Tryb Hybrydowy aktywny. Kliknij, aby przejść w tryb 100% Offline.'
+                    }
+                    className={`text-[10px] font-bold px-2 py-0.5 rounded-full flex items-center gap-1 transition-all cursor-pointer whitespace-nowrap shrink-0 ${
+                      isStrictOffline
+                        ? 'bg-emerald-500/25 border border-emerald-500/50 text-emerald-300'
+                        : 'bg-[#1e2638] hover:bg-[#2d3748] border border-white/10 text-gray-300'
+                    }`}
+                  >
+                    {isStrictOffline ? (
+                      <Lock className="w-2.5 h-2.5 text-emerald-400 shrink-0" />
+                    ) : (
+                      <Globe className="w-2.5 h-2.5 text-[#00e5ff] shrink-0" />
+                    )}
+                    <span>{isStrictOffline ? 'Offline' : 'Hybryda'}</span>
+                  </button>
+                )}
+
                 {hardwareState.isDndActive && (
-                  <span className="bg-red-500/20 text-red-300 border border-red-500/30 text-[10px] font-semibold px-1.5 py-0.5 rounded flex items-center gap-1">
-                    <BellOff className="w-3 h-3" />
+                  <span className="bg-red-500/20 text-red-300 border border-red-500/30 text-[9px] font-semibold px-1.5 py-0.5 rounded flex items-center gap-0.5 shrink-0">
+                    <BellOff className="w-2.5 h-2.5" />
                     <span>DND</span>
                   </span>
                 )}
               </div>
-              <p className="text-xs text-[#94a3b8]">
-                {isSpeaking ? (
-                  <span className="text-[#00e5ff] font-medium">Głos: Asystent mówi...</span>
-                ) : isProcessing ? (
-                  <span className="text-[#8b5cf6] font-medium">Przetwarzanie kognitywne...</span>
-                ) : (
-                  'Hybrydowy: Lokalny + Chmura'
-                )}
-              </p>
+
+              {/* Dynamic live status - only shown when speaking or processing */}
+              {(isSpeaking || isProcessing) && (
+                <div className="text-[10px] leading-tight mt-0.5 animate-fadeIn">
+                  {isSpeaking ? (
+                    <span className="text-[#00e5ff] font-semibold flex items-center gap-1">
+                      <span className="w-1.5 h-1.5 rounded-full bg-[#00e5ff] animate-ping shrink-0" />
+                      Mówi na głos...
+                    </span>
+                  ) : (
+                    <span className="text-[#8b5cf6] font-semibold flex items-center gap-1">
+                      <span className="w-1.5 h-1.5 rounded-full bg-[#8b5cf6] animate-ping shrink-0" />
+                      Przetwarzanie NPU...
+                    </span>
+                  )}
+                </div>
+              )}
             </div>
           </div>
 
-          <div className="flex items-center gap-1">
+          {/* Right Action Buttons */}
+          <div className="flex items-center gap-1 shrink-0">
+            {/* Hands-Free Car & Walk Mode */}
+            {onOpenHandsFree && (
+              <button
+                type="button"
+                onClick={onOpenHandsFree}
+                data-testid="hands_free_car_button"
+                title="Włącz tryb głośnomówiący Hands-Free (Samochód / Spacer)"
+                className="p-1.5 rounded-lg text-amber-400 bg-amber-400/10 hover:bg-amber-400/25 border border-amber-400/20 transition-all flex items-center gap-1 active:scale-95"
+              >
+                <Car className="w-4 h-4" />
+                <span className="hidden md:inline text-[10px] font-bold">Auto</span>
+              </button>
+            )}
+
             {/* Wake Word Continuous Listening Button */}
             <button
               type="button"
               onClick={onToggleWakeWord}
               data-testid="wake_word_toggle_button"
               title={wakeWordActive ? 'Wyłącz nasłuch słowa kluczowego' : 'Włącz nasłuch (Hej Cogni)'}
-              className={`p-2 rounded-lg transition-colors ${
+              className={`p-1.5 rounded-lg transition-colors ${
                 wakeWordActive
                   ? 'bg-[#00e5ff]/20 text-[#00e5ff] ring-1 ring-[#00e5ff]/50'
                   : 'text-[#94a3b8] hover:bg-white/5'
               }`}
             >
-              <Radio className={`w-5 h-5 ${wakeWordActive ? 'animate-pulse' : ''}`} />
+              <Radio className={`w-4 h-4 ${wakeWordActive ? 'animate-pulse' : ''}`} />
             </button>
 
             {/* Clear Chat Button */}
@@ -189,13 +325,34 @@ export const ChatScreen: React.FC<ChatScreenProps> = ({
               onClick={onClearChat}
               data-testid="clear_chat_button"
               title="Wyczyść historię czatu"
-              className="p-2 rounded-lg text-[#94a3b8] hover:bg-white/5 hover:text-red-400 transition-colors"
+              className="p-1.5 rounded-lg text-[#94a3b8] hover:bg-white/5 hover:text-red-400 transition-colors"
             >
-              <Trash2 className="w-5 h-5" />
+              <Trash2 className="w-4 h-4" />
             </button>
           </div>
         </div>
       </header>
+
+      {/* 100% Offline Air-Gap Status Banner */}
+      {isStrictOffline && (
+        <div className="bg-emerald-950/40 border-b border-emerald-500/30 px-3.5 py-1.5 flex items-center justify-between text-xs text-emerald-300 shrink-0 animate-fadeIn">
+          <div className="flex items-center gap-2 min-w-0">
+            <Lock className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
+            <span className="truncate">
+              <strong>Tryb 100% Offline (Air-Gap):</strong> Wszystkie zapytania są przetwarzane wyłącznie na NPU telefonu. Zero danych w sieci.
+            </span>
+          </div>
+          {onToggleStrictOffline && (
+            <button
+              type="button"
+              onClick={onToggleStrictOffline}
+              className="text-[10px] bg-emerald-500/20 hover:bg-emerald-500/35 px-2 py-0.5 rounded border border-emerald-500/40 font-semibold text-emerald-200 shrink-0 ml-2 transition-colors"
+            >
+              Wyłącz
+            </button>
+          )}
+        </div>
+      )}
 
       {/* Sessions & Smart Tools Sub-Bar */}
       <div className="bg-[#0e141f] border-b border-[#2d3748] px-3 sm:px-4 py-2 flex items-center justify-between gap-2 shrink-0">
@@ -212,6 +369,32 @@ export const ChatScreen: React.FC<ChatScreenProps> = ({
         </button>
 
         <div className="flex items-center gap-1.5 shrink-0">
+          {/* Local Knowledge Base (RAG) */}
+          {onOpenKnowledgeBase && (
+            <button
+              type="button"
+              onClick={onOpenKnowledgeBase}
+              data-testid="knowledge_base_button"
+              title="Lokalna Baza Wiedzy (Offline RAG / Dokumenty)"
+              className="p-1.5 rounded-xl bg-[#121824] hover:bg-[#1e2638] text-gray-300 hover:text-[#00e5ff] border border-[#2d3748] transition-colors"
+            >
+              <BookOpen className="w-3.5 h-3.5" />
+            </button>
+          )}
+
+          {/* Android Launcher Simulator */}
+          {onOpenLauncherSimulator && (
+            <button
+              type="button"
+              onClick={onOpenLauncherSimulator}
+              data-testid="launcher_simulator_button"
+              title="Symulator pulpitu Androida (Pływający dymek)"
+              className="p-1.5 rounded-xl bg-[#121824] hover:bg-[#1e2638] text-gray-300 hover:text-[#8b5cf6] border border-[#2d3748] transition-colors"
+            >
+              <Smartphone className="w-3.5 h-3.5" />
+            </button>
+          )}
+
           {/* Notifications Button with unread badge */}
           <button
             type="button"
@@ -327,15 +510,15 @@ export const ChatScreen: React.FC<ChatScreenProps> = ({
       <footer className="bg-[#121824] border-t border-[#2d3748] p-3 shrink-0 shadow-lg">
         {/* Active Listening Banner */}
         {isListening && (
-          <div className="mb-2 bg-red-950/60 border border-red-500/40 rounded-xl px-3 py-2 flex items-center justify-between animate-fadeIn">
-            <div className="flex items-center gap-2 text-xs text-red-200">
-              <Radio className="w-4 h-4 text-red-400 animate-pulse" />
-              <span>Nasłuchiwanie głosu... Mów teraz w języku polskim</span>
+          <div className="mb-2 bg-[#0d1624] border border-[#00e5ff]/40 rounded-xl px-3 py-2 flex items-center justify-between shadow-[0_0_15px_rgba(0,229,255,0.15)] animate-fadeIn">
+            <div className="flex items-center gap-2 text-xs text-[#00e5ff] font-medium">
+              <span className="w-2.5 h-2.5 rounded-full bg-[#00e5ff] animate-ping shrink-0" />
+              <span>Słucham... Powiedz swoje polecenie lub pytanie</span>
             </div>
             <button
               type="button"
               onClick={onStopVoice}
-              className="text-xs font-bold text-red-400 hover:text-red-300 px-2 py-0.5 rounded bg-red-500/10 hover:bg-red-500/20 transition-colors"
+              className="text-xs font-bold text-gray-300 hover:text-white px-2.5 py-1 rounded-lg bg-white/10 hover:bg-white/20 transition-colors shrink-0"
             >
               Zatrzymaj
             </button>
@@ -345,69 +528,220 @@ export const ChatScreen: React.FC<ChatScreenProps> = ({
         {/* Audio Visualizer (Waveform & Quantum Orb) during Voice Input */}
         {isListening && <NeonAudioVisualizer rmsLevel={rmsLevel} />}
 
+        {/* Hidden Camera Picker Input */}
+        <input
+          type="file"
+          ref={cameraInputRef}
+          onChange={handleFileChange}
+          className="hidden"
+          accept="image/*"
+          capture="environment"
+        />
+
+        {/* Hidden Gallery Picker Input */}
+        <input
+          type="file"
+          ref={galleryInputRef}
+          onChange={handleFileChange}
+          className="hidden"
+          accept="image/*"
+        />
+
+        {/* Hidden Document Picker Input */}
+        <input
+          type="file"
+          ref={docInputRef}
+          onChange={handleFileChange}
+          className="hidden"
+          accept=".pdf,.txt,.doc,.docx,.md,.csv,.json"
+        />
+
+        {/* Pending Attachment Preview Bar */}
+        {pendingAttachment && (
+          <div className="mb-2 bg-[#0a0e14] border border-[#00e5ff]/40 rounded-xl p-2 flex items-center justify-between gap-3 animate-fadeIn">
+            <div className="flex items-center gap-2.5 min-w-0">
+              {pendingAttachment.isImage && pendingAttachment.previewUrl ? (
+                <img
+                  src={pendingAttachment.previewUrl}
+                  alt={pendingAttachment.fileName}
+                  className="w-10 h-10 rounded-lg object-cover border border-white/10 shrink-0"
+                />
+              ) : (
+                <div className="w-10 h-10 rounded-lg bg-[#00e5ff]/15 flex items-center justify-center shrink-0">
+                  <FileText className="w-5 h-5 text-[#00e5ff]" />
+                </div>
+              )}
+              <div className="min-w-0">
+                <div className="text-xs font-bold text-white truncate">
+                  {pendingAttachment.fileName}
+                </div>
+                <div className="text-[10px] text-gray-400 font-mono">
+                  {pendingAttachment.fileSize} • Gotowy do analizy przez agenta
+                </div>
+              </div>
+            </div>
+
+            <button
+              type="button"
+              onClick={() => setPendingAttachment(null)}
+              title="Usuń załącznik"
+              className="p-1 rounded-lg text-gray-400 hover:text-red-400 hover:bg-white/5 transition-colors shrink-0"
+            >
+              <X className="w-4 h-4" />
+            </button>
+          </div>
+        )}
+
         {/* Input Controls Row */}
         <div className="flex items-center gap-2 relative">
-          {/* Tools Menu Button */}
+          {/* Agent Action Sheet / Tools Menu Button */}
           <div className="relative">
             <button
               type="button"
               onClick={() => setShowToolsMenu(!showToolsMenu)}
               data-testid="tools_button"
-              title="Menu narzędzi sprzętowych"
-              className="p-2.5 rounded-full text-[#94a3b8] hover:text-white hover:bg-white/10 transition-colors"
+              title="Narzędzia Agenta AI & Załączniki"
+              className={`p-2.5 rounded-full transition-all shrink-0 ${
+                showToolsMenu
+                  ? 'bg-[#00e5ff]/20 text-[#00e5ff] rotate-45'
+                  : 'text-[#94a3b8] hover:text-white hover:bg-white/10'
+              }`}
             >
-              <Wrench className="w-5 h-5" />
+              <Plus className="w-5 h-5 transition-transform duration-200" />
             </button>
 
             {showToolsMenu && (
-              <div className="absolute bottom-12 left-0 w-56 bg-[#1e2638] border border-[#2d3748] rounded-xl shadow-xl py-1 z-30 animate-fadeIn">
-                <button
-                  type="button"
-                  onClick={() => {
-                    onToggleTorch();
-                    setShowToolsMenu(false);
-                  }}
-                  className="w-full px-3 py-2 flex items-center gap-2.5 text-xs text-left text-white hover:bg-white/10 transition-colors"
-                >
-                  <Flashlight className={`w-4 h-4 ${hardwareState.isTorchOn ? 'text-[#00e5ff]' : 'text-gray-400'}`} />
-                  <span>{hardwareState.isTorchOn ? 'Wyłącz latarkę' : 'Włącz latarkę'}</span>
-                </button>
+              <div className="absolute bottom-12 left-0 w-72 sm:w-80 bg-[#121824] border border-[#2d3748] rounded-2xl shadow-2xl p-2 z-40 animate-fadeIn backdrop-blur-md">
+                <div className="px-3 py-1.5 border-b border-white/5 flex items-center justify-between mb-1">
+                  <span className="text-[11px] font-bold text-gray-300 uppercase tracking-wider flex items-center gap-1.5">
+                    <Plus className="w-3.5 h-3.5 text-[#00e5ff]" />
+                    <span>Załączniki i multimedia</span>
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => setShowToolsMenu(false)}
+                    className="text-gray-400 hover:text-white p-0.5 rounded"
+                  >
+                    <X className="w-3.5 h-3.5" />
+                  </button>
+                </div>
 
-                <button
-                  type="button"
-                  onClick={() => {
-                    hardwareManager.toggleDndMode();
-                    setShowToolsMenu(false);
-                  }}
-                  className="w-full px-3 py-2 flex items-center gap-2.5 text-xs text-left text-white hover:bg-white/10 transition-colors"
-                >
-                  <BellOff className={`w-4 h-4 ${hardwareState.isDndActive ? 'text-red-400' : 'text-gray-400'}`} />
-                  <span>{hardwareState.isDndActive ? 'Wyłącz DND' : 'Tryb Nie Przeszkadzać (DND)'}</span>
-                </button>
+                <div className="space-y-1">
+                  {/* 1. Live Camera Vision (Gemini Live Stream) */}
+                  {onOpenLiveCamera && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setShowToolsMenu(false);
+                        onOpenLiveCamera();
+                      }}
+                      className="w-full p-2.5 rounded-xl bg-gradient-to-r from-[#00e5ff]/15 to-[#8b5cf6]/15 hover:from-[#00e5ff]/25 hover:to-[#8b5cf6]/25 border border-[#00e5ff]/40 flex items-center gap-3 text-left transition-colors group"
+                    >
+                      <div className="w-8 h-8 rounded-lg bg-[#00e5ff]/20 border border-[#00e5ff]/50 flex items-center justify-center shrink-0">
+                        <Eye className="w-4 h-4 text-[#00e5ff] animate-pulse" />
+                      </div>
+                      <div className="min-w-0 flex-1">
+                        <div className="text-xs font-bold text-white group-hover:text-[#00e5ff] transition-colors flex items-center gap-1.5">
+                          <span>Wizja Na Żywo (Kamera Live)</span>
+                          <span className="text-[9px] bg-[#00e5ff]/20 text-[#00e5ff] px-1 rounded font-bold">Gemini Live</span>
+                        </div>
+                        <div className="text-[11px] text-gray-300 truncate">
+                          Obraz z aparatu w czasie rzeczywistym + głos
+                        </div>
+                      </div>
+                    </button>
+                  )}
 
-                <button
-                  type="button"
-                  onClick={() => {
-                    hardwareManager.setTimer(300, 'Minutnik 5 min');
-                    setShowToolsMenu(false);
-                  }}
-                  className="w-full px-3 py-2 flex items-center gap-2.5 text-xs text-left text-white hover:bg-white/10 transition-colors"
-                >
-                  <Clock className="w-4 h-4 text-[#8b5cf6]" />
-                  <span>Ustaw minutnik 5 minut</span>
-                </button>
+                  {/* 2. Camera Snapshot Capture */}
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setShowToolsMenu(false);
+                      cameraInputRef.current?.click();
+                    }}
+                    className="w-full p-2.5 rounded-xl hover:bg-[#1e2638] flex items-center gap-3 text-left transition-colors group"
+                  >
+                    <div className="w-8 h-8 rounded-lg bg-[#00e5ff]/15 group-hover:bg-[#00e5ff]/25 border border-[#00e5ff]/30 flex items-center justify-center shrink-0">
+                      <Camera className="w-4 h-4 text-[#00e5ff]" />
+                    </div>
+                    <div className="min-w-0 flex-1">
+                      <div className="text-xs font-bold text-white group-hover:text-[#00e5ff] transition-colors">
+                        Zrób zdjęcie (Aparat)
+                      </div>
+                      <div className="text-[11px] text-gray-400 truncate">
+                        Szybkie zdjęcie paragonu, etykiety lub obiektu
+                      </div>
+                    </div>
+                  </button>
 
-                <button
-                  type="button"
-                  onClick={() => {
-                    onSendMessage('Sprawdź stan baterii');
-                    setShowToolsMenu(false);
-                  }}
-                  className="w-full px-3 py-2 flex items-center gap-2.5 text-xs text-left text-white hover:bg-white/10 transition-colors"
-                >
-                  <BatteryCharging className="w-4 h-4 text-[#10b981]" />
-                  <span>Stan baterii ({hardwareState.batteryPercent}%)</span>
-                </button>
+                  {/* 2. Gallery Photos */}
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setShowToolsMenu(false);
+                      galleryInputRef.current?.click();
+                    }}
+                    className="w-full p-2.5 rounded-xl hover:bg-[#1e2638] flex items-center gap-3 text-left transition-colors group"
+                  >
+                    <div className="w-8 h-8 rounded-lg bg-[#8b5cf6]/15 group-hover:bg-[#8b5cf6]/25 border border-[#8b5cf6]/30 flex items-center justify-center shrink-0">
+                      <Image className="w-4 h-4 text-[#8b5cf6]" />
+                    </div>
+                    <div className="min-w-0 flex-1">
+                      <div className="text-xs font-bold text-white group-hover:text-[#8b5cf6] transition-colors">
+                        Wybierz z Galerii (Zdjęcia)
+                      </div>
+                      <div className="text-[11px] text-gray-400 truncate">
+                        Zrzut ekranu, wykres lub zdjęcie z pamięci telefonu
+                      </div>
+                    </div>
+                  </button>
+
+                  {/* 3. Document / File */}
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setShowToolsMenu(false);
+                      docInputRef.current?.click();
+                    }}
+                    className="w-full p-2.5 rounded-xl hover:bg-[#1e2638] flex items-center gap-3 text-left transition-colors group"
+                  >
+                    <div className="w-8 h-8 rounded-lg bg-amber-500/15 group-hover:bg-amber-500/25 border border-amber-500/30 flex items-center justify-center shrink-0">
+                      <FileText className="w-4 h-4 text-amber-400" />
+                    </div>
+                    <div className="min-w-0 flex-1">
+                      <div className="text-xs font-bold text-white group-hover:text-amber-300 transition-colors">
+                        Dołącz Plik / Dokument
+                      </div>
+                      <div className="text-[11px] text-gray-400 truncate">
+                        PDF, TXT, DOCX, specyfikacje i notatki
+                      </div>
+                    </div>
+                  </button>
+
+                  {/* 4. Local Knowledge Base (RAG) */}
+                  {onOpenKnowledgeBase && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setShowToolsMenu(false);
+                        onOpenKnowledgeBase();
+                      }}
+                      className="w-full p-2.5 rounded-xl hover:bg-[#1e2638] flex items-center gap-3 text-left transition-colors group"
+                    >
+                      <div className="w-8 h-8 rounded-lg bg-emerald-500/15 group-hover:bg-emerald-500/25 border border-emerald-500/30 flex items-center justify-center shrink-0">
+                        <BookOpen className="w-4 h-4 text-emerald-400" />
+                      </div>
+                      <div className="min-w-0 flex-1">
+                        <div className="text-xs font-bold text-white group-hover:text-emerald-300 transition-colors">
+                          Lokalna Baza Wiedzy (Offline RAG)
+                        </div>
+                        <div className="text-[11px] text-gray-400 truncate">
+                          Wyszukaj lub dodaj umowę do pamięci urządzenia
+                        </div>
+                      </div>
+                    </button>
+                  )}
+                </div>
               </div>
             )}
           </div>

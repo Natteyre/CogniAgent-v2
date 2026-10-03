@@ -5,33 +5,22 @@ export interface SpeechHelperListeners {
   onRmsLevelChange?: (level: number) => void;
 }
 
+export interface StartListeningConfig {
+  continuous?: boolean;
+  onInterimResult?: (interimText: string) => void;
+  onFinalResult: (text: string) => void;
+  onError?: (err: string) => void;
+  onEnd?: () => void;
+}
+
 class SpeechRecognizerHelper {
   private isListeningState: boolean = false;
   private rmsLevelState: number = 0;
   private listeners: SpeechHelperListeners = {};
 
-  private recognition: any = null;
-  private audioContext: AudioContext | null = null;
-  private mediaStream: MediaStream | null = null;
-  private analyser: AnalyserNode | null = null;
-  private animFrameId: number | null = null;
-
-  constructor() {
-    this.initRecognition();
-  }
-
-  private initRecognition() {
-    if (typeof window === 'undefined') return;
-
-    const win = window as any;
-    const SpeechRecognitionClass = win.SpeechRecognition || win.webkitSpeechRecognition;
-    if (SpeechRecognitionClass) {
-      this.recognition = new SpeechRecognitionClass();
-      this.recognition.continuous = false;
-      this.recognition.interimResults = false;
-      this.recognition.lang = 'pl-PL';
-    }
-  }
+  private recognitionInstance: any = null;
+  private animInterval: any = null;
+  private isExplicitlyStopped: boolean = false;
 
   setListeners(listeners: SpeechHelperListeners) {
     this.listeners = listeners;
@@ -55,110 +44,166 @@ class SpeechRecognizerHelper {
     this.listeners.onRmsLevelChange?.(val);
   }
 
-  async startListening(
-    onResult: (text: string) => void,
-    onError: (err: string) => void
-  ) {
-    if (this.isListeningState) return;
+  private startRmsSimulation() {
+    this.stopRmsSimulation();
+    let phase = 0;
+    this.animInterval = setInterval(() => {
+      if (!this.isListeningState) {
+        this.stopRmsSimulation();
+        return;
+      }
+      phase += 0.25;
+      // Gentle pulsing matching voice wave
+      const level = Math.max(0.3, 1.8 + Math.sin(phase) * 1.5 + (Math.random() - 0.5) * 0.8);
+      this.setRms(level);
+    }, 80);
+  }
 
-    if (!this.recognition) {
-      onError('Przeglądarka nie obsługuje SpeechRecognition. Wpisz polecenie tekstowo.');
+  private stopRmsSimulation() {
+    if (this.animInterval) {
+      clearInterval(this.animInterval);
+      this.animInterval = null;
+    }
+    this.setRms(0);
+  }
+
+  /**
+   * Starts speech recognition with either single-shot or continuous mode
+   */
+  startListening(
+    configOrResult: StartListeningConfig | ((text: string) => void),
+    onErrorFallback?: (err: string) => void
+  ) {
+    // If already active, stop previous cleanly first
+    if (this.isListeningState) {
+      this.stopListening();
+    }
+
+    const config: StartListeningConfig =
+      typeof configOrResult === 'function'
+        ? {
+            continuous: false,
+            onFinalResult: configOrResult,
+            onError: onErrorFallback
+          }
+        : configOrResult;
+
+    const win = typeof window !== 'undefined' ? (window as any) : null;
+    if (!win) return;
+
+    const SpeechRecognitionClass = win.SpeechRecognition || win.webkitSpeechRecognition;
+
+    if (!SpeechRecognitionClass) {
+      config.onError?.('Twoja przeglądarka nie obsługuje Web Speech API. Wpisz polecenie tekstowo.');
       return;
     }
 
     try {
-      this.setListening(true);
+      this.isExplicitlyStopped = false;
+      const recog = new SpeechRecognitionClass();
+      this.recognitionInstance = recog;
 
-      // Start Microphone stream for neon visualizer
-      try {
-        this.mediaStream = await navigator.mediaDevices.getUserMedia({ audio: true });
-        this.audioContext = new (window.AudioContext || (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext)();
-        const source = this.audioContext.createMediaStreamSource(this.mediaStream);
-        this.analyser = this.audioContext.createAnalyser();
-        this.analyser.fftSize = 64;
-        source.connect(this.analyser);
+      recog.continuous = !!config.continuous;
+      recog.interimResults = true;
+      recog.lang = 'pl-PL';
+      recog.maxAlternatives = 1;
 
-        const dataArray = new Uint8Array(this.analyser.frequencyBinCount);
-        const updateLevel = () => {
-          if (!this.analyser || !this.isListeningState) return;
-          this.analyser.getByteFrequencyData(dataArray);
-          let sum = 0;
-          for (let i = 0; i < dataArray.length; i++) {
-            sum += dataArray[i];
+      let finalAccumulated = '';
+
+      recog.onstart = () => {
+        this.setListening(true);
+        this.startRmsSimulation();
+      };
+
+      recog.onresult = (event: any) => {
+        let interimText = '';
+        for (let i = event.resultIndex; i < event.results.length; ++i) {
+          const item = event.results[i];
+          const transcript = item[0].transcript;
+          if (item.isFinal) {
+            finalAccumulated += (finalAccumulated ? ' ' : '') + transcript;
+          } else {
+            interimText += transcript;
           }
-          const avg = sum / dataArray.length;
-          // Scale to 0.1 - 10.0 range matching original Android RMS
-          const normalized = Math.max(0.2, (avg / 255) * 8);
-          this.setRms(normalized);
-          this.animFrameId = requestAnimationFrame(updateLevel);
-        };
-        updateLevel();
-      } catch {
-        // Fallback simulated RMS oscillation
-        let phase = 0;
-        const interval = setInterval(() => {
-          if (!this.isListeningState) {
-            clearInterval(interval);
+        }
+
+        if (interimText && config.onInterimResult) {
+          config.onInterimResult(interimText.trim());
+        }
+
+        if (finalAccumulated) {
+          const textToSend = finalAccumulated.trim();
+          finalAccumulated = '';
+          config.onFinalResult(textToSend);
+          if (!config.continuous) {
+            this.stopListening();
+          }
+        }
+      };
+
+      recog.onerror = (event: any) => {
+        const err = event.error || 'unknown';
+
+        // Benign non-fatal errors in Web Speech API
+        if (err === 'no-speech' || err === 'aborted') {
+          // If in continuous mode and not explicitly stopped, do not treat as fatal error
+          return;
+        }
+
+        this.stopRmsSimulation();
+        this.setListening(false);
+
+        if (err === 'not-allowed') {
+          config.onError?.('Dostęp do mikrofonu został zablokowany w przeglądarce.');
+        } else {
+          config.onError?.(`Rozpoznawanie mowy: ${err}`);
+        }
+      };
+
+      recog.onend = () => {
+        // If continuous mode and not explicitly stopped by user, attempt clean restart
+        if (config.continuous && !this.isExplicitlyStopped && this.recognitionInstance === recog) {
+          try {
+            recog.start();
             return;
+          } catch {
+            // If restart fails, close cleanly
           }
-          phase += 0.2;
-          this.setRms(1.5 + Math.sin(phase) * 1.2 + Math.random() * 0.5);
-        }, 100);
-      }
+        }
 
-      this.recognition.onresult = (event: any) => {
-        const text = event.results[0][0].transcript;
-        this.stopAudioAnalysis();
+        this.stopRmsSimulation();
         this.setListening(false);
-        onResult(text);
+        config.onEnd?.();
       };
 
-      this.recognition.onerror = (event: any) => {
-        this.stopAudioAnalysis();
-        this.setListening(false);
-        onError(`Błąd rozpoznawania mowy: ${event.error || 'Nieznany'}`);
-      };
-
-      this.recognition.onend = () => {
-        this.stopAudioAnalysis();
-        this.setListening(false);
-      };
-
-      this.recognition.start();
+      recog.start();
     } catch (e: any) {
-      this.stopAudioAnalysis();
+      this.stopRmsSimulation();
       this.setListening(false);
-      onError(e.message || 'Błąd uruchamiania mikrofonu');
+      // Avoid alerting on InvalidStateError if transitioning
+      if (e?.name !== 'InvalidStateError') {
+        config.onError?.(e.message || 'Nie można uruchomić mikrofonu.');
+      }
     }
   }
 
   stopListening() {
-    if (this.recognition && this.isListeningState) {
+    this.isExplicitlyStopped = true;
+    if (this.recognitionInstance) {
       try {
-        this.recognition.stop();
+        this.recognitionInstance.abort?.();
       } catch {
         // Ignore
       }
+      try {
+        this.recognitionInstance.stop?.();
+      } catch {
+        // Ignore
+      }
+      this.recognitionInstance = null;
     }
-    this.stopAudioAnalysis();
+    this.stopRmsSimulation();
     this.setListening(false);
-  }
-
-  private stopAudioAnalysis() {
-    if (this.animFrameId) {
-      cancelAnimationFrame(this.animFrameId);
-      this.animFrameId = null;
-    }
-    if (this.mediaStream) {
-      this.mediaStream.getTracks().forEach((t) => t.stop());
-      this.mediaStream = null;
-    }
-    if (this.audioContext && this.audioContext.state !== 'closed') {
-      this.audioContext.close().catch(() => {});
-      this.audioContext = null;
-    }
-    this.analyser = null;
-    this.setRms(0);
   }
 }
 

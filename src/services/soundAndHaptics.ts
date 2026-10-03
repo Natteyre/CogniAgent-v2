@@ -68,6 +68,72 @@ class SoundAndHapticsService {
   }
 
   /**
+   * Subtle, pleasant Gemini-style chime (ascending 2-tone) when voice mode / hands-free activates
+   */
+  playListeningStartChime() {
+    if (!this.isSoundEnabled()) return;
+    try {
+      const ctx = this.getAudioContext();
+      if (!ctx) return;
+
+      const now = ctx.currentTime;
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+
+      gain.connect(ctx.destination);
+      gain.gain.setValueAtTime(0.001, now);
+      gain.gain.exponentialRampToValueAtTime(0.14, now + 0.03);
+      gain.gain.exponentialRampToValueAtTime(0.001, now + 0.22);
+
+      osc.type = 'sine';
+      // Harmonic 587.33 Hz (D5) glides up to 880 Hz (A5)
+      osc.frequency.setValueAtTime(587.33, now);
+      osc.frequency.exponentialRampToValueAtTime(880, now + 0.12);
+
+      osc.connect(gain);
+      osc.start(now);
+      osc.stop(now + 0.23);
+
+      this.triggerHaptic(18);
+    } catch (e) {
+      console.warn('Audio earcon error:', e);
+    }
+  }
+
+  /**
+   * Soft descending tone when listening is paused or muted
+   */
+  playListeningPauseChime() {
+    if (!this.isSoundEnabled()) return;
+    try {
+      const ctx = this.getAudioContext();
+      if (!ctx) return;
+
+      const now = ctx.currentTime;
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+
+      gain.connect(ctx.destination);
+      gain.gain.setValueAtTime(0.001, now);
+      gain.gain.exponentialRampToValueAtTime(0.10, now + 0.02);
+      gain.gain.exponentialRampToValueAtTime(0.001, now + 0.18);
+
+      osc.type = 'sine';
+      // Downward tone 784 Hz (G5) glides down to 523.25 Hz (C5)
+      osc.frequency.setValueAtTime(784, now);
+      osc.frequency.exponentialRampToValueAtTime(523.25, now + 0.1);
+
+      osc.connect(gain);
+      osc.start(now);
+      osc.stop(now + 0.19);
+
+      this.triggerHaptic(12);
+    } catch (e) {
+      console.warn('Audio earcon error:', e);
+    }
+  }
+
+  /**
    * Warm harmony chord when a hardware command or routine completes
    */
   playSuccessChime() {

@@ -29,13 +29,13 @@ import {
   FileText,
   MessageSquare,
   DollarSign,
-  Lock
+  Lock,
+  Search
 } from 'lucide-react';
 import {
   HardwareState,
   KirinTelemetry,
   LlmSettings,
-  DownloadState,
   OfflineModelInfo,
   DeviceProfile,
   AgentServicesConfig,
@@ -57,9 +57,6 @@ interface SettingsScreenProps {
   testConnectionStatus: string | null;
   availableVoices: string[];
   telemetry: KirinTelemetry;
-  downloadState: DownloadState;
-  isNluModelInstalled: boolean;
-  modelSizeMB: number;
   isFloatingActive: boolean;
   onUpdateSettings: (settings: LlmSettings) => void;
   onTestConnection: () => void;
@@ -67,8 +64,6 @@ interface SettingsScreenProps {
   onToggleTorch: () => void;
   onToggleBluetooth: () => void;
   onRefreshHardware: () => void;
-  onDownloadModel: () => void;
-  onDeleteModel: () => void;
   onToggleFloatingService: () => void;
   onToggleAccessibility: () => void;
   onToggleNotifications: () => void;
@@ -82,9 +77,6 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
   testConnectionStatus,
   availableVoices,
   telemetry,
-  downloadState,
-  isNluModelInstalled,
-  modelSizeMB,
   isFloatingActive,
   onUpdateSettings,
   onTestConnection,
@@ -92,8 +84,6 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
   onToggleTorch,
   onToggleBluetooth,
   onRefreshHardware,
-  onDownloadModel,
-  onDeleteModel,
   onToggleFloatingService,
   onToggleAccessibility,
   onToggleNotifications,
@@ -126,6 +116,10 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
   const [securityPolicy, setSecurityPolicy] = useState<AgentSecurityPolicy>(() => securityManager.getPolicy());
   const [auditLog, setAuditLog] = useState<SecurityAuditItem[]>(() => securityManager.getAuditLog());
   const [showAuditModal, setShowAuditModal] = useState(false);
+
+  // Hardware Auto-Detection State
+  const [isDetectingHardware, setIsDetectingHardware] = useState(false);
+  const [detectionNotice, setDetectionNotice] = useState<string | null>(null);
 
   useEffect(() => {
     const unsubModels = modelManager.subscribeModelList((list) => {
@@ -163,6 +157,16 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
   const handleSaveCustomProfile = () => {
     deviceProfileManager.setActiveProfile(customForm);
     setIsEditingCustomDevice(false);
+  };
+
+  const handleAutoDetectHardware = () => {
+    setIsDetectingHardware(true);
+    setTimeout(() => {
+      const res = deviceProfileManager.runAutoDetectionAndApply();
+      setIsDetectingHardware(false);
+      setDetectionNotice(res.summary);
+      setTimeout(() => setDetectionNotice(null), 6000);
+    }, 400);
   };
 
   const handleSaveLlm = (field: Partial<LlmSettings>) => {
@@ -247,6 +251,54 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
               <span>{isEditingCustomDevice ? 'Ukryj edytor' : 'Edytuj parametry'}</span>
             </button>
           </div>
+
+          {/* Hardware Auto-Detection Bar */}
+          <div className="bg-[#0a0e14] p-3 rounded-xl border border-white/5 flex flex-col sm:flex-row sm:items-center justify-between gap-2.5">
+            <div className="flex items-center gap-2.5 min-w-0">
+              <div className="w-8 h-8 rounded-lg bg-[#00e5ff]/15 flex items-center justify-center shrink-0">
+                <Search className="w-4 h-4 text-[#00e5ff]" />
+              </div>
+              <div className="min-w-0">
+                <div className="text-xs font-bold text-white flex items-center gap-2">
+                  <span>Automatyczne wykrywanie telefonu</span>
+                  {deviceProfile.isAutoDetected && (
+                    <span className="bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 text-[9px] font-mono px-1.5 py-0.2 rounded font-bold">
+                      ✓ Auto-Wykryto
+                    </span>
+                  )}
+                </div>
+                <div className="text-[11px] text-gray-400 truncate">
+                  {deviceProfile.detectedHardwareInfo || 'Skanuje GPU WebGL, RAM, rdzenie CPU i system'}
+                </div>
+              </div>
+            </div>
+
+            <button
+              type="button"
+              onClick={handleAutoDetectHardware}
+              disabled={isDetectingHardware}
+              className="py-1.5 px-3 rounded-xl bg-gradient-to-r from-[#00e5ff] to-[#00b4d8] text-black font-extrabold text-xs shadow-md hover:opacity-95 active:scale-95 disabled:opacity-50 transition-all flex items-center justify-center gap-1.5 shrink-0"
+            >
+              {isDetectingHardware ? (
+                <>
+                  <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                  <span>Skanowanie...</span>
+                </>
+              ) : (
+                <>
+                  <Zap className="w-3.5 h-3.5 fill-black" />
+                  <span>🔍 Wykryj parametry telefonu</span>
+                </>
+              )}
+            </button>
+          </div>
+
+          {detectionNotice && (
+            <div className="bg-emerald-950/40 border border-emerald-500/40 p-2.5 rounded-xl text-xs font-semibold text-emerald-300 flex items-center gap-2 animate-fadeIn">
+              <CheckCircle className="w-4 h-4 text-emerald-400 shrink-0" />
+              <span>{detectionNotice}</span>
+            </div>
+          )}
 
           {/* Preset Selector Dropdown */}
           <div>
@@ -396,42 +448,79 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
           )}
         </div>
 
-        {/* Card 1: Kirin 980 Telemetry & Savings */}
+        {/* Card 1: Dynamic Hardware Telemetry & Acceleration Metrics */}
         <div
           data-testid="telemetry_card"
-          className="bg-[#121824] border border-[#2d3748] rounded-2xl p-4 shadow-sm"
+          className="bg-[#121824] border border-[#2d3748] rounded-2xl p-4 shadow-sm space-y-3"
         >
-          <div className="flex items-center gap-3 mb-3">
-            <div className="w-8 h-8 rounded-full bg-[#00e5ff]/20 border border-[#00e5ff]/30 flex items-center justify-center">
-              <Cpu className="w-4 h-4 text-[#00e5ff]" />
+          <div className="flex items-center justify-between flex-wrap gap-2">
+            <div className="flex items-center gap-3">
+              <div className="w-8 h-8 rounded-full bg-[#00e5ff]/20 border border-[#00e5ff]/30 flex items-center justify-center shrink-0">
+                <Cpu className="w-4 h-4 text-[#00e5ff]" />
+              </div>
+              <div>
+                <h2 className="text-sm font-bold text-white flex items-center gap-2">
+                  <span>Panel Telemetrii Sprzętowej</span>
+                  <span className="text-[10px] font-mono font-bold bg-[#00e5ff]/15 text-[#00e5ff] border border-[#00e5ff]/30 px-2 py-0.5 rounded-full">
+                    {deviceProfile.modelName}
+                  </span>
+                </h2>
+                <span className="text-[11px] text-[#00e5ff] font-semibold">
+                  {deviceProfile.manufacturer === 'huawei'
+                    ? `${telemetry.bigCoresActive}x Cortex-A76 Big Cores (Kirin 980 HiAI Dual-NPU aktywne)`
+                    : deviceProfile.manufacturer === 'samsung'
+                    ? `Qualcomm Hexagon / Samsung Eden NPU (${deviceProfile.chipset}) aktywne`
+                    : deviceProfile.manufacturer === 'pixel'
+                    ? `Google Tensor EdgeTPU (${deviceProfile.chipset}) aktywne`
+                    : deviceProfile.manufacturer === 'xiaomi'
+                    ? `Akcelerator AI HyperOS (${deviceProfile.chipset}) aktywny`
+                    : `${deviceProfile.npuAcceleration} • Aktywny backend akceleracji (${deviceProfile.chipset})`}
+                </span>
+              </div>
             </div>
-            <div>
-              <h2 className="text-sm font-bold text-white">Panel Telemetrii Kirin 980 NLU</h2>
-              <span className="text-[11px] text-[#00e5ff] font-semibold">
-                {telemetry.bigCoresActive} rdzenie Cortex-A76 Big Cores aktywne
+
+            <div className="flex items-center gap-1.5">
+              <span className="bg-[#1e2638] text-gray-300 border border-white/5 text-[10px] font-mono px-2 py-0.5 rounded">
+                RAM: {deviceProfile.ramGB} GB
+              </span>
+              <span className="bg-[#8b5cf6]/20 text-[#8b5cf6] border border-[#8b5cf6]/30 text-[10px] font-mono font-bold px-2 py-0.5 rounded">
+                {deviceProfile.npuAcceleration}
               </span>
             </div>
           </div>
 
-          <div className="grid grid-cols-3 gap-2 text-center pt-2 border-t border-white/5">
-            <div className="bg-[#0a0e14] p-2 rounded-xl border border-white/5">
-              <div className="text-[11px] text-gray-400">Czas NLU</div>
-              <div className="text-base sm:text-lg font-extrabold text-[#00e5ff] mt-0.5">
-                {telemetry.lastLocalInferenceMs > 0 ? `${telemetry.lastLocalInferenceMs} ms` : '< 15 ms'}
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-center pt-2 border-t border-white/5">
+            <div className="bg-[#0a0e14] p-2.5 rounded-xl border border-white/5">
+              <div className="text-[10px] text-gray-400">Czas inferencji</div>
+              <div className="text-sm sm:text-base font-extrabold text-[#00e5ff] mt-0.5">
+                {telemetry.lastLocalInferenceMs > 0 ? `${telemetry.lastLocalInferenceMs} ms` : '< 12 ms'}
               </div>
+              <div className="text-[9px] text-gray-500 font-mono">NPU / On-Device</div>
             </div>
 
-            <div className="bg-[#0a0e14] p-2 rounded-xl border border-white/5">
-              <div className="text-[11px] text-gray-400">Zapytania lokalne</div>
-              <div className="text-base sm:text-lg font-extrabold text-[#8b5cf6] mt-0.5">
+            <div className="bg-[#0a0e14] p-2.5 rounded-xl border border-white/5">
+              <div className="text-[10px] text-gray-400">Zapytania lokalne</div>
+              <div className="text-sm sm:text-base font-extrabold text-[#8b5cf6] mt-0.5">
                 {telemetry.localQueriesHandled}
               </div>
+              <div className="text-[9px] text-[#10b981] font-mono font-semibold">100% offline</div>
             </div>
 
-            <div className="bg-[#0a0e14] p-2 rounded-xl border border-white/5">
-              <div className="text-[11px] text-gray-400">Zaoszczędzone tokeny</div>
-              <div className="text-base sm:text-lg font-extrabold text-[#10b981] mt-0.5">
+            <div className="bg-[#0a0e14] p-2.5 rounded-xl border border-white/5">
+              <div className="text-[10px] text-gray-400">Zapytania w chmurze</div>
+              <div className="text-sm sm:text-base font-extrabold text-amber-400 mt-0.5">
+                {telemetry.cloudQueriesHandled || 0}
+              </div>
+              <div className="text-[9px] text-gray-500 font-mono">LLM API</div>
+            </div>
+
+            <div className="bg-[#0a0e14] p-2.5 rounded-xl border border-white/5">
+              <div className="text-[10px] text-gray-400">Zaoszczędzone tokeny</div>
+              <div className="text-sm sm:text-base font-extrabold text-[#10b981] mt-0.5">
                 {telemetry.totalSavedTokens}
+              </div>
+              <div className="text-[9px] text-emerald-400 font-mono">
+                ~{(telemetry.savedDataKb || telemetry.localQueriesHandled * 1.8).toFixed(1)} KB danych
               </div>
             </div>
           </div>
@@ -475,36 +564,54 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
             </button>
           </div>
 
-          {/* Active Model Overview Bar */}
-          <div className="bg-[#0a0e14] border border-white/5 rounded-xl p-3 sm:p-3.5 flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3">
-            <div className="min-w-0">
+          {/* Active Model Overview Bar (Dual-Engine Tandem) */}
+          <div className="bg-[#0a0e14] border border-white/5 rounded-xl p-3 sm:p-3.5 space-y-2.5">
+            <div className="flex items-center justify-between flex-wrap gap-2">
               <div className="text-[10px] text-gray-400 uppercase font-mono tracking-wider">
-                Aktywny silnik offline na urządzeniu:
+                Aktywny Tandem AI na urządzeniu (Dual-Engine):
               </div>
-              <div className="text-xs sm:text-sm font-extrabold text-white flex items-center gap-1.5 mt-1 flex-wrap">
-                <span className="text-[#00e5ff] break-words">
-                  {offlineModels.find((m) => m.id === activeOfflineModelId)?.name || 'GLiNER Polish NLU'}
-                </span>
-                <span className="bg-[#1e2638] text-gray-300 text-[10px] font-mono px-2 py-0.5 rounded border border-white/5 shrink-0">
-                  {offlineModels.find((m) => m.id === activeOfflineModelId)?.format || 'ONNX'}
-                </span>
-                <span className="bg-[#8b5cf6]/20 text-[#8b5cf6] text-[10px] font-bold px-1.5 py-0.5 rounded shrink-0">
-                  {offlineModels.find((m) => m.id === activeOfflineModelId)?.precision || 'INT4'}
-                </span>
+              <span className="bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 text-[9px] font-extrabold px-1.5 py-0.5 rounded font-mono">
+                DUAL-ENGINE AKTYWNY
+              </span>
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs">
+              <div className="p-2.5 bg-[#121824] rounded-lg border border-emerald-500/30 space-y-1">
+                <div className="text-[10px] font-extrabold text-emerald-400 flex items-center justify-between">
+                  <span>⚡ SILNIK A (ROUTER NPU):</span>
+                  <span className="font-mono text-gray-400">14 ms</span>
+                </div>
+                <div className="font-bold text-white">GLiNER Polish Multi-Intent</div>
+                <div className="text-[10px] text-gray-400 leading-tight">
+                  Stały kontroler systemu: latarka, bluetooth, głośność, makra, OCR i ekran.
+                </div>
               </div>
-              <div className="text-[11px] text-gray-400 mt-1.5 leading-relaxed break-words">
-                Wymagania: <span className="text-[#00e5ff] font-semibold">{offlineModels.find((m) => m.id === activeOfflineModelId)?.recommendedHardware || 'Kirin 980'}</span>
+
+              <div className="p-2.5 bg-[#121824] rounded-lg border border-[#8b5cf6]/30 space-y-1">
+                <div className="text-[10px] font-extrabold text-[#8b5cf6] flex items-center justify-between">
+                  <span>🧠 SILNIK B (CZAT OFFLINE):</span>
+                  <span className="font-mono text-gray-400">SLM</span>
+                </div>
+                <div className="font-bold text-white truncate">
+                  {offlineModels.find((m) => m.id === activeOfflineModelId)?.name || 'Qwen 2.5 1.5B Instruct'}
+                </div>
+                <div className="text-[10px] text-gray-400 leading-tight">
+                  Generowanie mowy i konwersacje w 100% na urządzeniu.
+                </div>
               </div>
             </div>
 
-            <div className="flex items-center gap-2 pt-1 sm:pt-0 shrink-0">
+            <div className="flex items-center justify-between pt-1">
+              <div className="text-[11px] text-gray-400">
+                Przyspieszenie: <span className="text-[#00e5ff] font-semibold">{deviceProfile.chipset} ({deviceProfile.npuAcceleration})</span>
+              </div>
               <button
                 type="button"
                 onClick={() => setIsModelModalOpen(true)}
-                className="w-full sm:w-auto py-2 px-3.5 rounded-xl bg-gradient-to-r from-[#00e5ff] to-[#8b5cf6] text-black font-extrabold text-xs transition-all shadow-md flex items-center justify-center gap-1.5 hover:opacity-95 shrink-0 active:scale-[0.98]"
+                className="py-1.5 px-3 rounded-xl bg-gradient-to-r from-[#00e5ff] to-[#8b5cf6] text-black font-extrabold text-xs transition-all shadow-md flex items-center justify-center gap-1.5 hover:opacity-95 shrink-0 active:scale-[0.98]"
               >
                 <Download className="w-3.5 h-3.5 shrink-0" />
-                <span>Pobierz z HuggingFace</span>
+                <span>Katalog HuggingFace</span>
               </button>
             </div>
           </div>

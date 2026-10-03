@@ -61,9 +61,9 @@ export const ModelCard: React.FC<ModelCardProps> = ({
             <div className="flex items-center gap-1.5 sm:gap-2 flex-wrap">
               <h3 className="text-xs sm:text-sm font-bold text-white tracking-wide break-words">{model.name}</h3>
               {isActive && (
-                <span className="bg-[#00e5ff]/20 text-[#00e5ff] border border-[#00e5ff]/40 text-[10px] font-extrabold px-2 py-0.5 rounded-full flex items-center gap-1 shadow-sm shrink-0">
+                <span className="bg-[#8b5cf6]/25 text-[#8b5cf6] border border-[#8b5cf6]/50 text-[10px] font-extrabold px-2 py-0.5 rounded-full flex items-center gap-1 shadow-sm shrink-0">
                   <CheckCircle className="w-3 h-3 shrink-0" />
-                  <span>AKTYWNY</span>
+                  <span>SILNIK B: CZAT OFFLINE</span>
                 </span>
               )}
             </div>
@@ -150,10 +150,10 @@ export const ModelCard: React.FC<ModelCardProps> = ({
               <button
                 type="button"
                 onClick={() => onActivate(model.id)}
-                className="w-full sm:flex-1 py-2 px-3 rounded-xl bg-[#00e5ff] hover:bg-[#00b4d8] text-black font-bold text-xs transition-all flex items-center justify-center gap-1.5 shadow-[0_0_10px_rgba(0,229,255,0.3)] active:scale-[0.98]"
+                className="w-full sm:flex-1 py-2 px-3 rounded-xl bg-gradient-to-r from-[#00e5ff] to-[#8b5cf6] hover:opacity-95 text-black font-extrabold text-xs transition-all flex items-center justify-center gap-1.5 shadow-[0_0_10px_rgba(0,229,255,0.3)] active:scale-[0.98]"
               >
                 <Zap className="w-3.5 h-3.5 fill-black shrink-0" />
-                <span>Ustaw jako aktywny</span>
+                <span>Wybierz do czatu offline</span>
               </button>
             )}
 

@@ -14,7 +14,8 @@ const STORAGE_KEYS = {
   SETTINGS: 'cogni_llm_settings',
   TELEMETRY: 'cogni_telemetry',
   VIRTUAL_FS: 'cogni_virtual_fs',
-  NLU_MODEL_INSTALLED: 'cogni_nlu_model_installed'
+  NLU_MODEL_INSTALLED: 'cogni_nlu_model_installed',
+  STRICT_OFFLINE_MODE: 'cogni_strict_offline_mode'
 };
 
 const DEFAULT_SETTINGS: LlmSettings = {
@@ -188,6 +189,14 @@ export const storage = {
 
   setNluModelInstalled(installed: boolean) {
     localStorage.setItem(STORAGE_KEYS.NLU_MODEL_INSTALLED, String(installed));
+  },
+
+  getStrictOfflineMode(): boolean {
+    return localStorage.getItem(STORAGE_KEYS.STRICT_OFFLINE_MODE) === 'true';
+  },
+
+  setStrictOfflineMode(enabled: boolean) {
+    localStorage.setItem(STORAGE_KEYS.STRICT_OFFLINE_MODE, String(enabled));
   },
 
   // Virtual Filesystem for LLM Tools (read_file / write_file)

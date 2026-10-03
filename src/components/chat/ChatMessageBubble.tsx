@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Copy, Volume2, Check, Zap, Brain } from 'lucide-react';
+import { Copy, Volume2, Check, Zap, Brain, FileText } from 'lucide-react';
 import { ChatMessage } from '../../types';
 
 interface ChatMessageBubbleProps {
@@ -67,6 +67,38 @@ export const ChatMessageBubble: React.FC<ChatMessageBubbleProps> = ({
             <span className="font-mono text-[11px] leading-tight break-all text-[#e2e8f0]">
               {message.toolInvocation}
             </span>
+          </div>
+        )}
+
+        {/* Attached image preview */}
+        {message.attachedImage && (
+          <div className="mb-2.5 rounded-xl overflow-hidden border border-white/10 max-w-xs shadow-md">
+            <img
+              src={message.attachedImage}
+              alt={message.attachedFileName || 'Załączony obraz'}
+              className="w-full max-h-56 object-cover"
+            />
+            {message.attachedFileName && (
+              <div className="bg-[#0a0e14]/90 px-2.5 py-1 text-[11px] text-gray-300 font-mono flex items-center justify-between">
+                <span className="truncate">{message.attachedFileName}</span>
+                {message.attachedFileSize && (
+                  <span className="text-gray-500 text-[10px] ml-2 shrink-0">{message.attachedFileSize}</span>
+                )}
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* Attached non-image file */}
+        {!message.attachedImage && message.attachedFileName && (
+          <div className="mb-2.5 rounded-xl bg-[#0a0e14]/80 border border-white/10 px-3 py-2 flex items-center gap-2.5 text-xs text-white">
+            <FileText className="w-5 h-5 text-[#00e5ff] shrink-0" />
+            <div className="min-w-0 flex-1">
+              <div className="font-semibold truncate">{message.attachedFileName}</div>
+              {message.attachedFileSize && (
+                <div className="text-[10px] text-gray-400 font-mono">{message.attachedFileSize}</div>
+              )}
+            </div>
           </div>
         )}
 
