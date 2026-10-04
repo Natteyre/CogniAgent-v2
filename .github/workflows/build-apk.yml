@@ -1,0 +1,134 @@
+name: Build Android APK (CogniAgent v2)
+
+on:
+  push:
+    branches:
+      - main
+      - master
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build-apk:
+    name: Build & Package Android APK
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: 📥 Check out repository
+        uses: actions/checkout@v4
+
+      - name: ☕ Set up Java 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '17'
+
+      - name: 📱 Set up Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: 🟢 Set up Node.js 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: 'npm'
+
+      - name: 📦 Install NPM dependencies
+        run: |
+          npm ci || npm install
+
+      - name: 🏗️ Build React / Vite App
+        run: |
+          npm run build
+
+      - name: ⚡ Initialize & Sync Capacitor Android
+        run: |
+          # Add android platform if not already committed
+          if [ ! -d "android" ]; then
+            npx cap add android
+          fi
+          npx cap sync android
+
+      - name: 🛡️ Inject Android Permissions & Assist Service
+        run: |
+          MANIFEST="android/app/src/main/AndroidManifest.xml"
+          if [ -f "$MANIFEST" ]; then
+            echo "Injecting hardware & system permissions into $MANIFEST..."
+            # Check and inject permissions before </manifest>
+            python3 - << 'EOF'
+          import xml.etree.ElementTree as ET
+
+          manifest_path = "android/app/src/main/AndroidManifest.xml"
+          with open(manifest_path, "r", encoding="utf-8") as f:
+              content = f.read()
+
+          permissions = [
+              "android.permission.INTERNET",
+              "android.permission.ACCESS_NETWORK_STATE",
+              "android.permission.RECORD_AUDIO",
+              "android.permission.MODIFY_AUDIO_SETTINGS",
+              "android.permission.CAMERA",
+              "android.permission.FLASHLIGHT",
+              "android.permission.VIBRATE",
+              "android.permission.WAKE_LOCK",
+              "android.permission.SYSTEM_ALERT_WINDOW"
+          ]
+
+          lines = []
+          for perm in permissions:
+              perm_line = f'    <uses-permission android:name="{perm}" />'
+              if perm not in content:
+                  lines.append(perm_line)
+
+          if lines:
+              idx = content.find("<application")
+              if idx != -1:
+                  new_content = content[:idx] + "\n".join(lines) + "\n\n    " + content[idx:]
+                  with open(manifest_path, "w", encoding="utf-8") as f:
+                      f.write(new_content)
+                  print("Permissions successfully injected!")
+              else:
+                  print("Could not find <application tag")
+          else:
+              print("All permissions already present.")
+          EOF
+          fi
+
+      - name: 🔨 Build Debug APK with Gradle
+        run: |
+          cd android
+          chmod +x gradlew
+          ./gradlew assembleDebug --no-daemon
+
+      - name: 📦 Prepare Output APK Artifact
+        run: |
+          mkdir -p output-apk
+          APK_PATH="android/app/build/outputs/apk/debug/app-debug.apk"
+          if [ -f "$APK_PATH" ]; then
+            cp "$APK_PATH" output-apk/CogniAgent-v2-debug.apk
+            echo "APK generated successfully: output-apk/CogniAgent-v2-debug.apk"
+            ls -lh output-apk/CogniAgent-v2-debug.apk
+          else
+            echo "Error: APK not found at $APK_PATH"
+            exit 1
+          fi
+
+      - name: 🚀 Upload APK Artifact to GitHub
+        uses: actions/upload-artifact@v4
+        with:
+          name: CogniAgent-v2-debug-apk
+          path: output-apk/CogniAgent-v2-debug.apk
+          retention-days: 14
+
+      - name: 📝 Job Summary
+        run: |
+          echo "### 🚀 Sukces kompilacji APK dla Huawei P30 Pro!" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "Pomyślnie zbudowano plik instalacyjny: **CogniAgent-v2-debug.apk**" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "#### Jak zainstalować na telefonie:" >> $GITHUB_STEP_SUMMARY
+          echo "1. Wejdź w zakładkę **Actions** tego workflow na GitHubie." >> $GITHUB_STEP_SUMMARY
+          echo "2. Na dole strony w sekcji **Artifacts** kliknij i pobierz **CogniAgent-v2-debug-apk.zip**." >> $GITHUB_STEP_SUMMARY
+          echo "3. Prześlij plik APK na swój telefon (lub pobierz bezpośrednio przez przeglądarkę telefonu)." >> $GITHUB_STEP_SUMMARY
+          echo "4. Otwórz plik na Huawei P30 Pro i zatwierdź instalację z nieznanych źródeł." >> $GITHUB_STEP_SUMMARY
