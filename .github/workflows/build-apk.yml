@@ -15,6 +15,10 @@ jobs:
     name: Build & Package Android APK
     runs-on: ubuntu-latest
 
+    env:
+      ANDROID_HOME: /usr/local/lib/android/sdk
+      ANDROID_SDK_ROOT: /usr/local/lib/android/sdk
+
     steps:
       - name: 📥 Check out repository
         uses: actions/checkout@v4
@@ -25,8 +29,20 @@ jobs:
           distribution: 'temurin'
           java-version: '17'
 
-      - name: 📱 Set up Android SDK
-        uses: android-actions/setup-android@v3
+      - name: 📱 Accept Android SDK Licenses
+        run: |
+          mkdir -p "$ANDROID_HOME/licenses" || true
+          # Pre-accept official Android SDK licenses to prevent any interactive prompt
+          echo -e "\n24333f8a63b6825ea9c5514f83c2829b004d1fee" > "$ANDROID_HOME/licenses/android-sdk-license"
+          echo -e "\nd56f5187479451eabf01fb78af6dfcb131a6481e" >> "$ANDROID_HOME/licenses/android-sdk-license"
+          echo -e "\n84831b9409646a918e30573bab4c9c91346d8abd" >> "$ANDROID_HOME/licenses/android-sdk-preview-license"
+          
+          # Find sdkmanager in pre-installed cmdline-tools and accept all licenses
+          SDK_MANAGER=$(find "$ANDROID_HOME/cmdline-tools" -name sdkmanager 2>/dev/null | head -n 1)
+          if [ -n "$SDK_MANAGER" ]; then
+            echo "Using sdkmanager at: $SDK_MANAGER"
+            yes | "$SDK_MANAGER" --licenses || true
+          fi
 
       - name: 🟢 Set up Node.js 20
         uses: actions/setup-node@v4
@@ -44,21 +60,18 @@ jobs:
 
       - name: ⚡ Initialize & Sync Capacitor Android
         run: |
-          # Add android platform if not already committed
+          # Add android platform if not already generated
           if [ ! -d "android" ]; then
             npx cap add android
           fi
           npx cap sync android
 
-      - name: 🛡️ Inject Android Permissions & Assist Service
+      - name: 🛡️ Inject Android Permissions & Overlay Flags
         run: |
           MANIFEST="android/app/src/main/AndroidManifest.xml"
           if [ -f "$MANIFEST" ]; then
             echo "Injecting hardware & system permissions into $MANIFEST..."
-            # Check and inject permissions before </manifest>
             python3 - << 'EOF'
-          import xml.etree.ElementTree as ET
-
           manifest_path = "android/app/src/main/AndroidManifest.xml"
           with open(manifest_path, "r", encoding="utf-8") as f:
               content = f.read()
@@ -89,7 +102,7 @@ jobs:
                       f.write(new_content)
                   print("Permissions successfully injected!")
               else:
-                  print("Could not find <application tag")
+                  print("Could not find <application> tag")
           else:
               print("All permissions already present.")
           EOF
@@ -99,7 +112,7 @@ jobs:
         run: |
           cd android
           chmod +x gradlew
-          ./gradlew assembleDebug --no-daemon
+          ./gradlew assembleDebug --no-daemon --stacktrace
 
       - name: 📦 Prepare Output APK Artifact
         run: |
@@ -111,6 +124,7 @@ jobs:
             ls -lh output-apk/CogniAgent-v2-debug.apk
           else
             echo "Error: APK not found at $APK_PATH"
+            find android/app/build -name "*.apk" || true
             exit 1
           fi
 
@@ -129,6 +143,6 @@ jobs:
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "#### Jak zainstalować na telefonie:" >> $GITHUB_STEP_SUMMARY
           echo "1. Wejdź w zakładkę **Actions** tego workflow na GitHubie." >> $GITHUB_STEP_SUMMARY
-          echo "2. Na dole strony w sekcji **Artifacts** kliknij i pobierz **CogniAgent-v2-debug-apk.zip**." >> $GITHUB_STEP_SUMMARY
+          echo "2. Na dole strony w sekcji **Artifacts** kliknij i pobierz **CogniAgent-v2-debug-apk**." >> $GITHUB_STEP_SUMMARY
           echo "3. Prześlij plik APK na swój telefon (lub pobierz bezpośrednio przez przeglądarkę telefonu)." >> $GITHUB_STEP_SUMMARY
           echo "4. Otwórz plik na Huawei P30 Pro i zatwierdź instalację z nieznanych źródeł." >> $GITHUB_STEP_SUMMARY
