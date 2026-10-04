@@ -15,6 +15,7 @@ import { securityManager } from './securityManager';
 import { imageOcrService } from './imageOcrService';
 import { deviceProfileManager } from './deviceProfileManager';
 import { localRagService } from './localRagService';
+import { androidNativeBridge } from './androidNativeBridge';
 
 export interface ApiMessage {
   role: 'system' | 'user' | 'assistant' | 'tool';
@@ -569,23 +570,41 @@ export class HybridAgentManager {
       }
       case 'OPEN_APPLICATION': {
         const appName = intent.entities.find((e) => e.label === 'target_app')?.value || 'aplikację';
-        if (appName.toLowerCase().includes('youtube')) {
-          return 'Uruchomiono aplikację YouTube.';
+        const lowerApp = appName.toLowerCase();
+        if (lowerApp.includes('ustawien') || lowerApp.includes('dostepnos') || lowerApp.includes('dostępnoś')) {
+          androidNativeBridge.openAccessibilitySettings();
+          return 'Otwieram Ustawienia Dostępności Androida.';
+        }
+        if (lowerApp.includes('asystent')) {
+          androidNativeBridge.openDefaultAssistantSettings();
+          return 'Otwieram wybór domyślnej aplikacji asystenta.';
+        }
+        if (lowerApp.includes('aparat') || lowerApp.includes('kamera')) {
+          return 'Uruchomiono moduł aparatu.';
+        }
+        if (lowerApp.includes('youtube')) {
+          window.location.href = 'https://www.youtube.com';
+          return 'Uruchamiam aplikację YouTube.';
+        }
+        if (lowerApp.includes('spotify')) {
+          window.location.href = 'spotify:';
+          return 'Uruchamiam aplikację Spotify.';
         }
         return `Otwieram aplikację: ${appName}.`;
       }
-      case 'WEB_SEARCH': {
-        const query = intent.entities.find((e) => e.label === 'search_query')?.value || '';
-        const service = intent.entities.find((e) => e.label === 'service')?.value;
-        if (service === 'youtube' || appContext?.includes('youtube')) {
-          return `Wyszukano w serwisie YouTube filmy: "${query}". Wyniki wideo zostały pomyślnie załadowane.`;
+      case 'MAKE_PHONE_CALL': {
+        const target = intent.entities.find((e) => e.label === 'phone_number' || e.label === 'contact')?.value || '';
+        if (target) {
+          androidNativeBridge.makePhoneCall(target);
+          return `Wybieram numer telefonu: ${target}.`;
         }
-        return await this.performWebSearch(query);
+        return 'Podaj numer telefonu lub kontakt do połączenia.';
       }
       case 'SEND_MESSAGE': {
-        const contact = intent.entities.find((e) => e.label === 'contact')?.value || 'odbiorcy';
+        const contact = intent.entities.find((e) => e.label === 'contact' || e.label === 'phone_number')?.value || '';
         const msg = intent.entities.find((e) => e.label === 'message')?.value || '';
-        return `Wysłano wiadomość do ${contact}${msg ? `: "${msg}"` : ''}.`;
+        androidNativeBridge.sendSms(contact, msg);
+        return `Otwieram aplikację wiadomości SMS do ${contact || 'odbiorcy'}${msg ? ` z treścią: "${msg}"` : ''}.`;
       }
       case 'CLICK_NODE': {
         const text = intent.entities.find((e) => e.label === 'setting_name')?.value || '';

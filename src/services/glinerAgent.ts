@@ -177,6 +177,17 @@ export class GlinerAgent {
       return { originalText: normalized, intentType: 'WEB_SEARCH', entities, confidence: 0.94 };
     }
 
+    // 10b. Phone Calls: "zadzwoń do mamy", "zadzwoń pod 500100200", "wybierz numer 123456789"
+    const callMatch = /^(?:zadzwoń|zadzwon|połącz|polacz|wybierz\s+numer)\s+(?:do\s+|pod\s+numer\s+|pod\s+)?(.+)$/iu.exec(
+      normalized
+    );
+    if (callMatch && callMatch[1]) {
+      const target = callMatch[1].trim();
+      entities.push({ label: 'action', value: 'make_phone_call' });
+      entities.push({ label: 'phone_number', value: target });
+      return { originalText: normalized, intentType: 'MAKE_PHONE_CALL', entities, confidence: 0.98 };
+    }
+
     // 11. Messaging: "wyślij wiadomość do [kontakt] [treść]"
     const msgMatch = /(?:wyślij|wyslij|napisz)\s+(?:wiadomość|sms)?\s*do\s+([\p{L}\d\s]+?)(?:\s+o\s+treści|\s+ze\s+słowami|:)?\s*(.+)?$/iu.exec(
       normalized

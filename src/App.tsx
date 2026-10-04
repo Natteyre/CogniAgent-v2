@@ -30,6 +30,7 @@ import { KnowledgeBaseModal } from './components/rag/KnowledgeBaseModal';
 import { AndroidLauncherSimulator } from './components/simulator/AndroidLauncherSimulator';
 import { AndroidAssistantModal } from './components/settings/AndroidAssistantModal';
 import { LiveCameraVisionModal } from './components/vision/LiveCameraVisionModal';
+import { FirstRunWizardModal } from './components/setup/FirstRunWizardModal';
 
 export const App: React.FC = () => {
   const [selectedTab, setSelectedTab] = useState<number>(0);
@@ -62,6 +63,9 @@ export const App: React.FC = () => {
   const [isLauncherSimulatorOpen, setIsLauncherSimulatorOpen] = useState<boolean>(false);
   const [isAssistantModalOpen, setIsAssistantModalOpen] = useState<boolean>(false);
   const [isLiveCameraOpen, setIsLiveCameraOpen] = useState<boolean>(false);
+  const [isWizardOpen, setIsWizardOpen] = useState<boolean>(() => {
+    return !localStorage.getItem('cogni_onboarding_completed');
+  });
   const [activeModelName, setActiveModelName] = useState<string>(() =>
     modelManager.getActiveModel()?.name || 'Kirin 980 NLU'
   );
@@ -499,6 +503,7 @@ export const App: React.FC = () => {
             onOpenKnowledgeBase={() => setIsKnowledgeBaseOpen(true)}
             onOpenLauncherSimulator={() => setIsLauncherSimulatorOpen(true)}
             onOpenLiveCamera={() => setIsLiveCameraOpen(true)}
+            onOpenWizard={() => setIsWizardOpen(true)}
           />
         )}
 
@@ -534,6 +539,7 @@ export const App: React.FC = () => {
             onToggleNotifications={() => hardwareManager.toggleNotificationListener()}
             onExportRoutines={handleExportRoutines}
             onImportRoutines={handleImportRoutines}
+            onOpenWizard={() => setIsWizardOpen(true)}
           />
         )}
       </main>
@@ -635,6 +641,15 @@ export const App: React.FC = () => {
 
       {/* Human-in-the-Loop Action Authorization Guardrail Modal */}
       <ActionAuthorizationModal />
+
+      {/* First-Run Android Permissions & Engine Setup Wizard */}
+      <FirstRunWizardModal
+        isOpen={isWizardOpen}
+        onClose={() => setIsWizardOpen(false)}
+        llmSettings={llmSettings}
+        onUpdateSettings={handleUpdateSettings}
+        onOpenModelManager={() => setIsModelModalOpen(true)}
+      />
     </div>
   );
 };

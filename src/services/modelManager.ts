@@ -48,8 +48,7 @@ const DEFAULT_MODELS: OfflineModelInfo[] = [
     author: 'Alibaba Cloud / Qwen',
     huggingFaceRepo: 'Qwen/Qwen2.5-1.5B-Instruct',
     downloadUrl: 'https://huggingface.co/onnx-community/Qwen2.5-1.5B-Instruct/resolve/main/onnx/model_int4.onnx',
-    isInstalled: true,
-    installedAt: Date.now() - 3600000,
+    isInstalled: false,
     contextWindow: 8192,
     description: 'Najwyżej oceniany model generatywny sub-2B na świecie. Wybitna polszczyzna, płynny czat, streszczenia i rozumowanie logiczne w 100% offline.',
     recommendedHardware: 'Kirin 980 / 4GB RAM'
@@ -181,10 +180,16 @@ class ModelManager {
     try {
       const saved = localStorage.getItem(STORAGE_KEYS.MODELS_REGISTRY);
       if (saved) {
-        const parsed: OfflineModelInfo[] = JSON.parse(saved);
+        let parsed: OfflineModelInfo[] = JSON.parse(saved);
         // Exclude GLiNER from conversational model list (it's now permanent System NLU)
         let filtered = parsed.filter((m) => m.id !== 'gliner-polish-nlu');
-        // Ensure Qwen 2.5 1.5B is present
+        // If legacy mockup had isInstalled: true without a real download session, reset to false
+        filtered = filtered.map((m) => {
+          if (!m.installedAt || m.installedAt < 1740000000000) {
+            return { ...m, isInstalled: false, installedAt: undefined };
+          }
+          return m;
+        });
         if (!filtered.some((m) => m.id === 'qwen2.5-1.5b-onnx')) {
           filtered = [DEFAULT_MODELS[0], ...filtered];
         }
@@ -195,15 +200,13 @@ class ModelManager {
       }
 
       const active = localStorage.getItem(STORAGE_KEYS.ACTIVE_MODEL_ID);
-      if (active && active !== 'gliner-polish-nlu' && this.models.some((m) => m.id === active && m.isInstalled)) {
+      const firstInstalled = this.models.find((m) => m.isInstalled);
+      if (active && this.models.some((m) => m.id === active && m.isInstalled)) {
         this.activeModelId = active;
+      } else if (firstInstalled) {
+        this.activeModelId = firstInstalled.id;
       } else {
-        const firstInstalled = this.models.find((m) => m.isInstalled);
-        if (firstInstalled) {
-          this.activeModelId = firstInstalled.id;
-        } else {
-          this.activeModelId = 'qwen2.5-1.5b-onnx';
-        }
+        this.activeModelId = 'qwen2.5-1.5b-onnx';
       }
     } catch {
       this.models = [...DEFAULT_MODELS];

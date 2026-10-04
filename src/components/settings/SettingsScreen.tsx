@@ -69,6 +69,7 @@ interface SettingsScreenProps {
   onToggleNotifications: () => void;
   onExportRoutines: () => void;
   onImportRoutines: (json: string) => void;
+  onOpenWizard?: () => void;
 }
 
 export const SettingsScreen: React.FC<SettingsScreenProps> = ({
@@ -88,7 +89,8 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
   onToggleAccessibility,
   onToggleNotifications,
   onExportRoutines,
-  onImportRoutines
+  onImportRoutines,
+  onOpenWizard
 }) => {
   const [apiKey, setApiKey] = useState(llmSettings.apiKey);
   const [endpointUrl, setEndpointUrl] = useState(llmSettings.endpointUrl);
@@ -940,6 +942,28 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
               </p>
             </div>
           </div>
+
+          {/* Launch Wizard Banner */}
+          {onOpenWizard && (
+            <div className="p-3 bg-gradient-to-r from-cyan-950/60 to-blue-950/60 border border-cyan-500/40 rounded-xl flex items-center justify-between">
+              <div>
+                <div className="text-xs font-bold text-white flex items-center gap-1.5">
+                  <Smartphone className="w-3.5 h-3.5 text-cyan-400" />
+                  Kreator Uprawnień i Asystenta Androida
+                </div>
+                <div className="text-[11px] text-slate-300">
+                  Mikrofon, kamera, test mowy TTS, domyślny asystent, dostępność i nakładanie
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={onOpenWizard}
+                className="px-3 py-1.5 rounded-lg bg-cyan-600 hover:bg-cyan-500 text-white text-xs font-bold transition-all shadow-md shadow-cyan-600/20 shrink-0"
+              >
+                Uruchom Kreator
+              </button>
+            </div>
+          )}
 
           {/* 1. Floating Overlay Switch (Kept as requested) */}
           <div className="flex items-center justify-between py-2 border-b border-white/5">

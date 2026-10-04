@@ -64,6 +64,7 @@ interface ChatScreenProps {
   onOpenKnowledgeBase?: () => void;
   onOpenLauncherSimulator?: () => void;
   onOpenLiveCamera?: () => void;
+  onOpenWizard?: () => void;
 }
 
 export const ChatScreen: React.FC<ChatScreenProps> = ({
@@ -91,7 +92,8 @@ export const ChatScreen: React.FC<ChatScreenProps> = ({
   onOpenHandsFree,
   onOpenKnowledgeBase,
   onOpenLauncherSimulator,
-  onOpenLiveCamera
+  onOpenLiveCamera,
+  onOpenWizard
 }) => {
   const [inputText, setInputText] = useState('');
   const [showToolsMenu, setShowToolsMenu] = useState(false);
@@ -290,6 +292,19 @@ export const ChatScreen: React.FC<ChatScreenProps> = ({
 
           {/* Right Action Buttons */}
           <div className="flex items-center gap-1 shrink-0">
+            {/* Android Assist Setup & Permissions Wizard */}
+            {onOpenWizard && (
+              <button
+                type="button"
+                onClick={onOpenWizard}
+                title="Kreator uprawnień i asystenta Androida"
+                className="p-1.5 rounded-lg text-cyan-400 bg-cyan-400/10 hover:bg-cyan-400/25 border border-cyan-400/20 transition-all flex items-center gap-1 active:scale-95"
+              >
+                <Smartphone className="w-4 h-4" />
+                <span className="hidden sm:inline text-[10px] font-bold">Asystent</span>
+              </button>
+            )}
+
             {/* Hands-Free Car & Walk Mode */}
             {onOpenHandsFree && (
               <button

@@ -249,6 +249,13 @@ class SoundAndHapticsService {
       // Haptics not allowed or unsupported in current environment
     }
   }
+
+  /**
+   * Click sound and haptic tap
+   */
+  playClick() {
+    this.triggerHaptic(18);
+  }
 }
 
 export const soundAndHaptics = new SoundAndHapticsService();

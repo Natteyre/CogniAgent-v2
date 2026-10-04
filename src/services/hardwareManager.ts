@@ -1,4 +1,5 @@
 import { HardwareState, ActiveTimer, HuaweiOptimizationState } from '../types';
+import { androidNativeBridge } from './androidNativeBridge';
 
 export type TriggerListener = (triggerType: string) => void;
 
@@ -8,8 +9,8 @@ class HardwareManager {
     isCharging: false,
     isTorchOn: false,
     isBluetoothEnabled: true,
-    isAccessibilityActive: true,
-    isNotificationListenerActive: true,
+    isAccessibilityActive: false,
+    isNotificationListenerActive: false,
     brightnessPercent: 100,
     isDndActive: false,
     activeTimers: [],
@@ -220,12 +221,16 @@ class HardwareManager {
   toggleAccessibilityService(): boolean {
     this.state.isAccessibilityActive = !this.state.isAccessibilityActive;
     this.notify();
+    // Launch native Android Accessibility Settings screen
+    androidNativeBridge.openAccessibilitySettings();
     return this.state.isAccessibilityActive;
   }
 
   toggleNotificationListener(): boolean {
     this.state.isNotificationListenerActive = !this.state.isNotificationListenerActive;
     this.notify();
+    // Launch native Android Notification Access Settings screen
+    androidNativeBridge.openNotificationListenerSettings();
     return this.state.isNotificationListenerActive;
   }
 
